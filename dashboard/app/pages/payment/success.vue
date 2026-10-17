@@ -1,0 +1,2 @@
+<script setup lang="ts">useHead({ title: 'Thanh toán thành công' })</script>
+<template><main class="result-page"><section><div class="result-icon success">✓</div><p class="eyebrow">THANH TOÁN HOÀN TẤT</p><h1>Bạn đã thanh toán thành công.</h1><p>Quay lại SmartBox, nhập OTP và mở ngăn tủ để nhận hàng.</p><NuxtLink class="primary link-button" to="/">Về trang quản lý →</NuxtLink></section></main></template>

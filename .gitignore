@@ -1,0 +1,25 @@
+.DS_Store
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+
+# Node / Nuxt
+**/node_modules/
+**/.nuxt/
+**/.output/
+
+# PlatformIO
+**/.pio/
+
+# IDE and local tooling
+.idea/
+*.swp

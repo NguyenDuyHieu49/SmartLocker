@@ -1,0 +1,18 @@
+{
+  "name": "dashboard",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate && node scripts/harden-static-output.mjs",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "devDependencies": {
+    "nuxt": "^4.6.2",
+    "qrcode.vue": "^3.11.0",
+    "vue": "^3.5.44",
+    "vue-router": "^5.4.0"
+  }
+}

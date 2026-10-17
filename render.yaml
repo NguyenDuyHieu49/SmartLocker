@@ -1,0 +1,64 @@
+services:
+  - type: web
+    name: smartbox-api
+    runtime: docker
+    plan: free
+    region: singapore
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: OTP_PEPPER
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PHONE
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      - key: DEMO_MODE
+        value: "false"
+      - key: PAYMENT_PROVIDER
+        value: momo_sandbox
+      - key: PAYOS_ENABLED
+        value: "false"
+      - key: MOMO_BASE_URL
+        value: https://test-payment.momo.vn
+      - key: MOMO_PARTNER_CODE
+        sync: false
+      - key: MOMO_ACCESS_KEY
+        sync: false
+      - key: MOMO_SECRET_KEY
+        sync: false
+      - key: API_URL
+        value: https://api.smartbox.id.vn
+      - key: DASHBOARD_URL
+        value: https://smartbox.id.vn
+      - key: CORS_ORIGINS
+        value: https://smartbox.id.vn
+      - key: MQTT_HOST
+        sync: false
+      - key: MQTT_PORT
+        value: "8883"
+      - key: MQTT_USERNAME
+        sync: false
+      - key: MQTT_PASSWORD
+        sync: false
+      - key: MQTT_TLS
+        value: "true"
+      - key: MQTT_TLS_INSECURE
+        value: "false"
+      - key: MQTT_CLIENT_ID
+        value: smartlocker-backend
+      - key: BASE_FEE_VND
+        value: "5000"
+      - key: GRACE_MINUTES
+        value: "60"
+      - key: BILLING_UNIT_MINUTES
+        value: "60"
+      - key: UNIT_FEE_VND
+        value: "2000"

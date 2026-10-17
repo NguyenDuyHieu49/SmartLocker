@@ -1,0 +1,2 @@
+<script setup lang="ts">useHead({ title: 'Thanh toán chưa hoàn tất' })</script>
+<template><main class="result-page"><section><div class="result-icon">←</div><p class="eyebrow">CHƯA THANH TOÁN</p><h1>Giao dịch đã được hủy.</h1><p>Kiện hàng vẫn ở trong tủ. Bạn có thể thanh toán lại từ trang đơn hàng.</p><NuxtLink class="primary link-button" to="/">Quay lại đơn hàng →</NuxtLink></section></main></template>
