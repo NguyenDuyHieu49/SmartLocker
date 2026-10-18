@@ -3,7 +3,7 @@ from sqlalchemy import select
 from app.core.config import Settings
 from app.db import SessionFactory, engine
 from app.models import Base, Compartment, LockerStation, User, UserRole
-from app.security import hash_password, normalize_phone
+from app.security import hash_password, normalize_phone, verify_password
 
 
 async def initialize_database(settings: Settings) -> None:
@@ -51,4 +51,13 @@ async def initialize_database(settings: Settings) -> None:
                     role=UserRole.ADMIN.value,
                 )
             )
+        else:
+            admin.role = UserRole.ADMIN.value
+            admin.is_active = True
+            if not verify_password(
+                settings.bootstrap_admin_password, admin.password_hash
+            ):
+                admin.password_hash = hash_password(
+                    settings.bootstrap_admin_password
+                )
         await session.commit()
