@@ -50,11 +50,6 @@ class Settings(BaseSettings):
     momo_secret_key: str | None = None
     momo_timeout_seconds: float = 30.0
 
-    base_fee_vnd: int = 5_000
-    grace_minutes: int = 60
-    billing_unit_minutes: int = 60
-    unit_fee_vnd: int = 2_000
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

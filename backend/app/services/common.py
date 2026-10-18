@@ -59,6 +59,7 @@ async def order_view(
             if order.stored_at is not None
             else order.base_fee_vnd
         ),
+        daily_rate_vnd=order.unit_fee_vnd,
         deposit_code=deposit_code,
         pickup_otp=(
             derive_numeric_code(order.order_code, "pickup", length=8)

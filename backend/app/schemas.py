@@ -48,6 +48,7 @@ class OrderView(BaseModel):
     paid_at: datetime | None
     completed_at: datetime | None
     fee_vnd: int
+    daily_rate_vnd: int
     deposit_code: str | None = None
     pickup_otp: str | None = None
 
@@ -88,6 +89,7 @@ class LockerBoxView(BaseModel):
     order_code: str | None = None
     order_status: str | None = None
     stored_at: datetime | None = None
+    daily_rate_vnd: int | None = None
 
 
 class LockerStatusView(BaseModel):

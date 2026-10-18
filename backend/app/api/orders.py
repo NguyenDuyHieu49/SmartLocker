@@ -42,6 +42,7 @@ from app.services.commands import publish_unlock
 from app.services.common import add_audit, calculate_fee, order_view
 from app.services.device_events import DeviceEventProcessor
 from app.services.payment_service import create_or_get_payment, mark_payment_paid
+from app.services.pricing import pricing_snapshot_for_box
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 settings = get_settings()
@@ -112,6 +113,9 @@ async def create_order(
     order_code = f"{secrets.randbelow(100_000_000):08d}"
     deposit_code = generate_numeric_code(6)
     pickup_otp = derive_numeric_code(order_code, "pickup", length=8)
+    base_fee, grace_minutes, billing_unit_minutes, unit_fee = (
+        pricing_snapshot_for_box(compartment.number)
+    )
     order = Order(
         order_code=order_code,
         shipper_id=user.id,
@@ -122,10 +126,10 @@ async def create_order(
         deposit_code_digest=code_digest(deposit_code),
         pickup_otp_digest=code_digest(pickup_otp),
         demo_pickup_otp=None,
-        base_fee_vnd=settings.base_fee_vnd,
-        grace_minutes=settings.grace_minutes,
-        billing_unit_minutes=settings.billing_unit_minutes,
-        unit_fee_vnd=settings.unit_fee_vnd,
+        base_fee_vnd=base_fee,
+        grace_minutes=grace_minutes,
+        billing_unit_minutes=billing_unit_minutes,
+        unit_fee_vnd=unit_fee,
     )
     compartment.status = CompartmentStatus.RESERVED.value
     session.add(order)
@@ -138,7 +142,11 @@ async def create_order(
         entity_type="order",
         entity_id=order.id,
         actor_id=user.id,
-        detail={"device_id": station.device_id, "box": compartment.number},
+        detail={
+            "device_id": station.device_id,
+            "box": compartment.number,
+            "daily_rate_vnd": base_fee,
+        },
     )
     await session.commit()
     await session.refresh(order)

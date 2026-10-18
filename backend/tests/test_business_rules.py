@@ -12,6 +12,7 @@ from app.models import Order
 from app.payments import MockPaymentGateway, MomoSandboxGateway, PayOSGateway
 from app.security import code_digest, derive_numeric_code, normalize_phone, verify_code
 from app.services.common import calculate_fee
+from app.services.pricing import daily_rate_for_box, pricing_snapshot_for_box
 
 
 def make_order(stored_at: datetime | None) -> Order:
@@ -26,22 +27,34 @@ def make_order(stored_at: datetime | None) -> Order:
         pickup_otp_digest="digest-otp",
         stored_at=stored_at,
         base_fee_vnd=5_000,
-        grace_minutes=60,
-        billing_unit_minutes=60,
-        unit_fee_vnd=2_000,
+        grace_minutes=1_440,
+        billing_unit_minutes=1_440,
+        unit_fee_vnd=5_000,
     )
 
 
-def test_fee_uses_base_fee_during_grace_period() -> None:
+def test_fee_uses_daily_rate_during_first_24_hours() -> None:
     now = datetime.now(UTC)
-    order = make_order(now - timedelta(minutes=59))
+    order = make_order(now - timedelta(hours=23, minutes=59))
     assert calculate_fee(order, now) == 5_000
 
 
-def test_fee_rounds_each_started_billing_unit_up() -> None:
+def test_fee_charges_each_started_24_hour_period() -> None:
     now = datetime.now(UTC)
-    order = make_order(now - timedelta(minutes=121))
-    assert calculate_fee(order, now) == 9_000
+    order = make_order(now - timedelta(days=1, minutes=1))
+    assert calculate_fee(order, now) == 10_000
+
+
+def test_daily_rate_depends_on_rentable_box() -> None:
+    assert [daily_rate_for_box(box) for box in range(4)] == [
+        5_000,
+        5_000,
+        7_000,
+        10_000,
+    ]
+    assert pricing_snapshot_for_box(2) == (7_000, 1_440, 1_440, 7_000)
+    with pytest.raises(ValueError, match="box_not_rentable"):
+        daily_rate_for_box(4)
 
 
 def test_phone_normalization_and_otp_digest() -> None:

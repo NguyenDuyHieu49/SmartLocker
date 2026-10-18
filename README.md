@@ -27,6 +27,17 @@ ESP32 xử lý keypad, TFT, servo và công tắc cửa qua MQTT.
 Ngăn số 4 không được cấp cho đơn hàng. Việc cửa đóng/mở chỉ là trạng thái vật
 lý và không tự thay đổi trạng thái nghiệp vụ nếu thiếu `confirm_finish`.
 
+## Bảng giá lưu trữ
+
+- Ngăn 1 và 2: 5.000đ cho mỗi chu kỳ 24 giờ bắt đầu.
+- Ngăn 3: 7.000đ cho mỗi chu kỳ 24 giờ bắt đầu.
+- Ngăn 4: 10.000đ cho mỗi chu kỳ 24 giờ bắt đầu.
+- Ngăn 5 là ngăn kỹ thuật và không được cho thuê.
+
+Ngày đầu được thanh toán khi gửi hàng. Khi vượt quá 24 giờ, hệ thống tính phụ
+phí theo từng chu kỳ 24 giờ bắt đầu tiếp theo. Giá được lưu vào đơn lúc tạo nên
+việc đổi bảng giá sau này không làm thay đổi các đơn đã tồn tại.
+
 ## Chạy local
 
 ```bash

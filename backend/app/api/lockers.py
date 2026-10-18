@@ -16,6 +16,7 @@ from app.models import (
 from app.mqtt.service import MqttService
 from app.schemas import LockerBoxView, LockerStatusView, ManualUnlockRequest
 from app.services.commands import publish_unlock
+from app.services.pricing import daily_rate_for_box
 
 router = APIRouter(prefix="/api/v1/lockers", tags=["lockers"])
 AdminUser = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
@@ -97,6 +98,9 @@ async def locker_status(
                 order_code=order.order_code if order else None,
                 order_status=order.status if order else None,
                 stored_at=order.stored_at if order else None,
+                daily_rate_vnd=(
+                    daily_rate_for_box(item.number) if item.number < 4 else None
+                ),
             )
         )
     return LockerStatusView(

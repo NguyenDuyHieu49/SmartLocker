@@ -25,6 +25,7 @@ export interface Order {
   paid_at: string | null
   completed_at: string | null
   fee_vnd: number
+  daily_rate_vnd: number
   deposit_code?: string | null
   pickup_otp?: string | null
 }
@@ -49,6 +50,7 @@ export interface LockerBox {
   order_code: string | null
   order_status: string | null
   stored_at: string | null
+  daily_rate_vnd: number | null
 }
 
 export interface LockerStatus {

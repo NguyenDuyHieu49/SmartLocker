@@ -54,11 +54,3 @@ services:
         value: "false"
       - key: MQTT_CLIENT_ID
         value: smartlocker-backend
-      - key: BASE_FEE_VND
-        value: "5000"
-      - key: GRACE_MINUTES
-        value: "60"
-      - key: BILLING_UNIT_MINUTES
-        value: "60"
-      - key: UNIT_FEE_VND
-        value: "2000"

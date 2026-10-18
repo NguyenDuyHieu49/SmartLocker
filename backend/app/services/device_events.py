@@ -8,7 +8,6 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.db import SessionFactory
 from app.models import (
     CommandPurpose,
@@ -34,9 +33,9 @@ from app.security import (
 from app.services.commands import mark_command_ack, publish_unlock
 from app.services.common import add_audit, calculate_fee, find_station_and_box
 from app.services.payment_service import create_or_get_payment
+from app.services.pricing import pricing_snapshot_for_box
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 
 class DeviceEventProcessor:
@@ -227,6 +226,9 @@ class DeviceEventProcessor:
         recipient = await session.scalar(select(User).where(User.phone == phone))
         order_code = f"{secrets.randbelow(100_000_000):08d}"
         pickup_otp = derive_numeric_code(order_code, "pickup", length=8)
+        base_fee, grace_minutes, billing_unit_minutes, unit_fee = (
+            pricing_snapshot_for_box(compartment.number)
+        )
         order = Order(
             order_code=order_code,
             shipper_id=None,
@@ -236,10 +238,10 @@ class DeviceEventProcessor:
             status=OrderStatus.RESERVED.value,
             deposit_code_digest=code_digest(generate_numeric_code(12)),
             pickup_otp_digest=code_digest(pickup_otp),
-            base_fee_vnd=settings.base_fee_vnd,
-            grace_minutes=settings.grace_minutes,
-            billing_unit_minutes=settings.billing_unit_minutes,
-            unit_fee_vnd=settings.unit_fee_vnd,
+            base_fee_vnd=base_fee,
+            grace_minutes=grace_minutes,
+            billing_unit_minutes=billing_unit_minutes,
+            unit_fee_vnd=unit_fee,
         )
         compartment.status = CompartmentStatus.RESERVED.value
         session.add(order)
@@ -249,7 +251,12 @@ class DeviceEventProcessor:
             action="KIOSK_ORDER_CREATED",
             entity_type="order",
             entity_id=order.id,
-            detail={"device_id": device_id, "box": compartment.number, "size": size},
+            detail={
+                "device_id": device_id,
+                "box": compartment.number,
+                "size": size,
+                "daily_rate_vnd": base_fee,
+            },
         )
         await session.commit()
         try:
