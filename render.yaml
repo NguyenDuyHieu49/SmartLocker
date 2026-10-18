@@ -23,16 +23,14 @@ services:
       - key: DEMO_MODE
         value: "false"
       - key: PAYMENT_PROVIDER
-        value: momo_sandbox
+        value: payos
       - key: PAYOS_ENABLED
-        value: "false"
-      - key: MOMO_BASE_URL
-        value: https://test-payment.momo.vn
-      - key: MOMO_PARTNER_CODE
+        value: "true"
+      - key: PAYOS_CLIENT_ID
         sync: false
-      - key: MOMO_ACCESS_KEY
+      - key: PAYOS_API_KEY
         sync: false
-      - key: MOMO_SECRET_KEY
+      - key: PAYOS_CHECKSUM_KEY
         sync: false
       - key: API_URL
         value: https://api.smartbox.id.vn
