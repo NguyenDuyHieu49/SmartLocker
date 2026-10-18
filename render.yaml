@@ -33,7 +33,7 @@ services:
       - key: PAYOS_CHECKSUM_KEY
         sync: false
       - key: PAYOS_CONFIRM_WEBHOOK_ON_STARTUP
-        value: "true"
+        value: "false"
       - key: API_URL
         value: https://api.smartbox.id.vn
       - key: DASHBOARD_URL
