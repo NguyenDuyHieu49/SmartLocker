@@ -4,6 +4,12 @@ export default defineNuxtConfig({
   ssr: false,
   devtools: { enabled: false },
   css: ['~/assets/css/main.css'],
+  // Nuxt emits runtime-config.js with a stable filename. Keep production
+  // config out of browsers' old /_nuxt/ immutable cache by versioning the
+  // asset directory; Vercel also gives this file an explicit no-store header.
+  app: {
+    buildAssetsDir: '/_smartbox-v2/',
+  },
   runtimeConfig: {
     public: {
       apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const publicDir = join(projectRoot, '.output', 'public')
+const runtimeConfigPublicPath = '/smartbox-runtime-v2.js'
 
 async function walk(directory) {
   const entries = await readdir(directory, { withFileTypes: true })
@@ -52,7 +53,7 @@ for (const htmlFile of htmlFiles) {
   html = html
     .replace(importMapPattern, '')
     .replace(runtimeConfigPattern, '')
-    .replace('<head>', '<head><script src="/_nuxt/runtime-config.js"></script>')
+    .replace('<head>', `<head><script src="${runtimeConfigPublicPath}"></script>`)
 
   await writeFile(htmlFile, html)
 }
@@ -66,7 +67,7 @@ for (const jsFile of jsFiles) {
   if (rewritten !== source) await writeFile(jsFile, rewritten)
 }
 
-const runtimeConfigPath = join(publicDir, '_nuxt', 'runtime-config.js')
+const runtimeConfigPath = join(publicDir, runtimeConfigPublicPath.slice(1))
 await mkdir(dirname(runtimeConfigPath), { recursive: true })
 await writeFile(runtimeConfigPath, `${runtimeConfig}\n`)
 
