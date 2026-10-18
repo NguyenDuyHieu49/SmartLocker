@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -20,6 +21,8 @@ from app.mqtt.registry import DeviceRegistry
 from app.mqtt.service import MqttService
 from app.payments import PayOSGateway, create_payment_gateway
 from app.services.device_events import DeviceEventProcessor
+
+logger = logging.getLogger(__name__)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -47,7 +50,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         isinstance(payment_gateway, PayOSGateway)
         and settings.payos_confirm_webhook_on_startup
     ):
-        await asyncio.to_thread(payment_gateway.confirm_webhook)
+        try:
+            await asyncio.to_thread(payment_gateway.confirm_webhook)
+        except Exception:
+            # Webhook registration depends on an external service and must not make
+            # the locker API unavailable during a transient payOS/DNS failure.
+            logger.exception("payOS webhook confirmation failed")
     processor = DeviceEventProcessor(mqtt, payment_gateway, asyncio.get_running_loop())
     mqtt.set_event_handler(processor.submit)
     app.state.mqtt = mqtt

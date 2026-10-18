@@ -30,7 +30,14 @@ async def _process_payment_webhook(
         select(Payment).where(Payment.payos_order_code == verified.order_code)
     )
     if payment is None:
-        raise HTTPException(status_code=404, detail="payment_not_found")
+        # payOS sends a correctly signed sample transaction when validating a
+        # webhook URL. It deliberately has no matching local payment, but the
+        # endpoint must still return 2xx for payOS to finish registration.
+        return {
+            "success": True,
+            "ignored": True,
+            "reason": "payment_not_found",
+        }
     if payment.amount_vnd != verified.amount:
         raise HTTPException(status_code=409, detail="payment_amount_mismatch")
     order = await session.get(Order, payment.order_id)
