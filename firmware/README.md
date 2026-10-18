@@ -8,7 +8,8 @@ trạng thái chiếm dụng; ESP32 chỉ điều khiển phần cứng và báo
 
 - `1`: gửi hàng, chọn kích thước `1 = S` hoặc `2 = M`, nhập số điện thoại 10 số.
 - `2`: nhận hàng, nhập OTP 8 số.
-- `A`: xác nhận dữ liệu, xác nhận mở cửa hoặc xác nhận đã đóng cửa.
+- `A`: xác nhận dữ liệu, xác nhận mở khi màn hình yêu cầu hoặc xác nhận đã đóng
+  cửa. Sau thanh toán, backend tự gửi lệnh mở nên không cần nhấn `A` lần nữa.
 - `*`: xóa ký tự cuối; `C`: hủy và trở về menu.
 
 Firmware phát `evt/keypad` cho dữ liệu và xác nhận mở, phát

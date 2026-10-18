@@ -110,6 +110,11 @@ void KeypadService::showScene(const String& screen, const String& mode,
     activeBox_ = box;
     activeDoorOpened_ = false;
     state_ = State::CONFIRM_OPEN;
+  } else if (screen == "opening") {
+    activeMode_ = mode;
+    activeBox_ = box;
+    activeDoorOpened_ = false;
+    state_ = State::WAITING_DOOR;
   } else if (screen == "loading" || screen == "payment" ||
              screen == "overdue") {
     state_ = State::WAITING_SERVER;

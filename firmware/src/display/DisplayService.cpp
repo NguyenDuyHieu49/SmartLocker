@@ -140,7 +140,16 @@ void DisplayService::showResult(const String& otp, uint8_t box) {
   centeredText(String("Ngan ") + String(box + 1), 55, 2, ST77XX_WHITE);
   centeredText("MA NHAN HANG", 94, 1, ST77XX_YELLOW);
   centeredText(otp, 120, 3, ST77XX_WHITE);
-  centeredText("Luu ma - Nhan A de mo", 190, 1, ST77XX_GREEN);
+  centeredText("Luu ma - Tu dang mo", 190, 1, ST77XX_GREEN);
+}
+
+void DisplayService::showOpening(const String& mode, uint8_t box) {
+  header("THANH TOAN XONG", ST77XX_GREEN);
+  centeredText(String("Ngan ") + String(box + 1), 76, 3, ST77XX_WHITE);
+  centeredText("Dang mo khoa...", 132, 2, ST77XX_GREEN);
+  centeredText(mode == "pickup" ? "Lay hang va dong cua"
+                                  : "Dat hang va dong cua",
+               184, 1, ST77XX_YELLOW);
 }
 
 void DisplayService::showOverdue(uint8_t box, uint16_t days,

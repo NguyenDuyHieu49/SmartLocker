@@ -16,11 +16,12 @@ ESP32 xử lý keypad, TFT, servo và công tắc cửa qua MQTT.
 
 1. Tại tủ, shipper chọn cỡ S/M và nhập số điện thoại người nhận.
 2. Backend cấp một ngăn thuê phù hợp, tạo đơn, OTP 8 số và QR phí gửi.
-3. Webhook thanh toán hợp lệ cho phép người dùng xác nhận mở ngăn.
+3. Webhook thanh toán hợp lệ tự động gửi lệnh mở đúng ngăn; người dùng không
+   cần nhấn thêm nút mở.
 4. Sau khi đặt hàng và đóng cửa, shipper nhấn `A`; backend mới chuyển đơn sang
    `STORED` và ngăn sang `OCCUPIED`.
 5. Người nhận nhập OTP. Nếu chưa quá hạn, hệ thống cho xác nhận mở; nếu quá
-   hạn, hệ thống yêu cầu thanh toán phụ phí trước.
+   hạn, hệ thống yêu cầu thanh toán phụ phí rồi tự động mở sau webhook.
 6. Sau khi lấy hàng và đóng cửa, người nhận nhấn `A`; backend chuyển đơn sang
    `COMPLETED` và trả ngăn về `AVAILABLE`.
 

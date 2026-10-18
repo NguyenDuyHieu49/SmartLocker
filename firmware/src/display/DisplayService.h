@@ -18,6 +18,7 @@ class DisplayService {
   void showEnterOtp(const String& orderCode);
   void showDoorGuide(const String& mode, uint8_t box);
   void showResult(const String& otp, uint8_t box);
+  void showOpening(const String& mode, uint8_t box);
   void showOverdue(uint8_t box, uint16_t days, uint32_t dailyRate,
                    uint32_t amount);
   void showLoading(const String& mode);

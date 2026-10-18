@@ -124,8 +124,12 @@ void MqttService::handleUi(const String& payload) {
     keypad_.showScene(screen, mode, box);
   } else if (screen == "result") {
     const String otp = document["otp"] | "";
+    const bool autoOpen = document["auto_open"] | false;
     display_.showResult(otp, static_cast<uint8_t>(box));
-    keypad_.showScene(screen, "deposit", box);
+    keypad_.showScene(autoOpen ? "opening" : screen, "deposit", box);
+  } else if (screen == "opening") {
+    display_.showOpening(mode, static_cast<uint8_t>(box));
+    keypad_.showScene(screen, mode, box);
   } else if (screen == "overdue") {
     display_.showOverdue(static_cast<uint8_t>(box),
                          document["overdue_days"] | 0,

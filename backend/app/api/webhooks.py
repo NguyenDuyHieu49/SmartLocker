@@ -6,10 +6,19 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 
 from app.dependencies import SessionDep
-from app.models import Compartment, LockerStation, Order, Payment, WebhookEvent
+from app.models import (
+    CommandPurpose,
+    Compartment,
+    LockerStation,
+    Order,
+    Payment,
+    WebhookEvent,
+)
 from app.mqtt.service import MqttService
 from app.payments import PaymentGateway
 from app.security import derive_numeric_code
+from app.services.commands import publish_unlock
+from app.services.common import add_audit
 from app.services.payment_service import mark_payment_paid
 
 router = APIRouter(prefix="/api/v1/webhooks", tags=["webhooks"])
@@ -61,7 +70,14 @@ async def _process_payment_webhook(
     )
     await session.flush()
     is_deposit_payment = order.stored_at is None
-    await mark_payment_paid(session, payment, order, reference=verified.reference)
+    newly_paid = await mark_payment_paid(
+        session, payment, order, reference=verified.reference
+    )
+    if not newly_paid:
+        # A provider can retry a successful payment with a different reference.
+        # Persist the event for traceability, but never open the same door twice.
+        await session.commit()
+        return {"success": True, "duplicate": True}
     compartment = await session.get(Compartment, order.compartment_id)
     station = (
         await session.get(LockerStation, compartment.station_id)
@@ -70,6 +86,9 @@ async def _process_payment_webhook(
     )
     if station is not None and compartment is not None:
         mqtt = cast(MqttService, request.app.state.mqtt)
+        purpose = (
+            CommandPurpose.DEPOSIT if is_deposit_payment else CommandPurpose.PICKUP
+        )
         try:
             if is_deposit_payment:
                 mqtt.show_ui(
@@ -80,19 +99,56 @@ async def _process_payment_webhook(
                             order.order_code, "pickup", length=8
                         ),
                         "box": compartment.number,
+                        "auto_open": True,
                     },
                 )
             else:
                 mqtt.show_ui(
                     station.device_id,
                     {
-                        "screen": "door_guide",
+                        "screen": "opening",
                         "mode": "pickup",
                         "box": compartment.number,
                     },
                 )
         except RuntimeError:
             pass
+        try:
+            await publish_unlock(
+                session,
+                mqtt,
+                device_id=station.device_id,
+                box=compartment.number,
+                purpose=purpose,
+                order_id=order.id,
+                actor_id=None,
+                reason="payment_confirmed_auto_unlock",
+            )
+        except RuntimeError as exc:
+            await add_audit(
+                session,
+                action="AUTO_UNLOCK_FAILED",
+                entity_type="order",
+                entity_id=order.id,
+                detail={
+                    "device_id": station.device_id,
+                    "box": compartment.number,
+                    "purpose": purpose.value,
+                    "error": str(exc),
+                },
+            )
+            await session.commit()
+            try:
+                mqtt.show_ui(
+                    station.device_id,
+                    {
+                        "screen": "alert",
+                        "title": "DA NHAN THANH TOAN",
+                        "message": "Tu mat ket noi - lien he ho tro",
+                    },
+                )
+            except RuntimeError:
+                pass
     return {"success": True, "duplicate": False}
 
 
