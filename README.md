@@ -7,7 +7,7 @@ ST7789 240x240.
 ## Thành phần
 
 - `firmware/`: PlatformIO/Arduino cho ESP32-S3, TFT, keypad, servo và MQTT.
-- `backend/`: FastAPI, PostgreSQL/SQLite, MQTT, OTP, MoMo Sandbox/payOS và nhật ký.
+- `backend/`: FastAPI, PostgreSQL/SQLite, MQTT, OTP, payOS và nhật ký.
 - `dashboard/`: Nuxt SPA cho shipper, người nhận và admin.
 - `infrastructure/`: Mosquitto không xác thực chỉ dùng khi phát triển LAN.
 - `PHASE1_ARCHITECTURE.md`: kiến trúc và các quyết định kỹ thuật.
@@ -18,8 +18,8 @@ ST7789 240x240.
 1. Shipper tạo đơn, hệ thống giữ một ngăn và sinh mã gửi hàng.
 2. Shipper nhập mã trên keypad hoặc mở từ dashboard.
 3. Công tắc cửa xác nhận kiện hàng đã được cất và bắt đầu tính phí.
-4. Người nhận nhập mã đơn; TFT/dashboard hiển thị QR MoMo Sandbox.
-5. IPN MoMo có chữ ký hợp lệ xác nhận tiền và cho phép nhập OTP.
+4. Người nhận nhập mã đơn; TFT/dashboard hiển thị QR thanh toán payOS.
+5. Webhook payOS có chữ ký hợp lệ xác nhận tiền và cho phép nhập OTP.
 6. OTP đúng mới mở tủ; đóng cửa kết thúc đơn và trả ngăn về trạng thái trống.
 
 ## Chạy local

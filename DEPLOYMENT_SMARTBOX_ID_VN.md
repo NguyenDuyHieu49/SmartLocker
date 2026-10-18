@@ -16,8 +16,8 @@ Các subdomain không phải mua thêm. Chỉ tạo bản ghi DNS trong Mắt B�
    `SB-001`; giới hạn ACL trong `smartbox/SB-001/#`.
 3. Deploy thư mục `backend/`, khai báo biến môi trường và gắn
    `api.smartbox.id.vn`.
-4. Khai báo IPN MoMo Sandbox:
-   `https://api.smartbox.id.vn/api/v1/webhooks/momo`.
+4. Khai báo webhook payOS:
+   `https://api.smartbox.id.vn/api/v1/webhooks/payos`.
 5. Deploy thư mục `dashboard/` và gắn `smartbox.id.vn`.
 6. Sau khi Vercel/backend/broker cung cấp target, tạo bản ghi DNS tại
    Mắt Bão. Không đoán target trước khi dịch vụ được tạo.
@@ -33,7 +33,8 @@ secret của nhà cung cấp, không nhập vào mã nguồn:
 - `JWT_SECRET` và `OTP_PEPPER`: hai chuỗi ngẫu nhiên khác nhau, tối thiểu 32 ký tự.
 - `BOOTSTRAP_ADMIN_PHONE` và mật khẩu admin mạnh.
 - `DEMO_MODE=false`
-- `PAYMENT_PROVIDER=momo_sandbox` và ba khóa MoMo Sandbox.
+- `PAYMENT_PROVIDER=payos`, `PAYOS_ENABLED=true` và ba khóa
+  `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY`.
 - `MQTT_HOST`, `MQTT_PORT=8883`, username/password.
 - `MQTT_TLS=true`, `MQTT_TLS_INSECURE=false`.
 - `DASHBOARD_URL=https://smartbox.id.vn`
@@ -59,7 +60,7 @@ Không xóa MX/TXT hiện có nếu tên miền đang dùng email.
 1. `/health` trả `200` qua HTTPS.
 2. Đăng ký shipper và customer bằng hai số test.
 3. Tạo đơn, gửi hàng, mở/đóng cửa và kiểm tra trạng thái `STORED`.
-4. Quét QR bằng MoMo Test và hoàn tất giao dịch sandbox.
+4. Quét QR payOS và hoàn tất giao dịch kiểm thử với số tiền nhỏ.
 5. Kiểm tra webhook không bị ghi nhận hai lần.
 6. Nhập sai OTP 5 lần phải bị khóa; OTP đúng chỉ mở đúng ngăn.
 7. Ngắt Wi-Fi, khởi động lại và khôi phục kết nối.
