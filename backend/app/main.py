@@ -18,7 +18,7 @@ from app.bootstrap import initialize_database
 from app.core.config import get_settings
 from app.mqtt.registry import DeviceRegistry
 from app.mqtt.service import MqttService
-from app.payments import create_payment_gateway
+from app.payments import PayOSGateway, create_payment_gateway
 from app.services.device_events import DeviceEventProcessor
 
 
@@ -43,6 +43,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     registry = DeviceRegistry(settings.device_offline_after_seconds)
     mqtt = MqttService(settings, registry)
     payment_gateway = create_payment_gateway(settings)
+    if (
+        isinstance(payment_gateway, PayOSGateway)
+        and settings.payos_confirm_webhook_on_startup
+    ):
+        await asyncio.to_thread(payment_gateway.confirm_webhook)
     processor = DeviceEventProcessor(mqtt, payment_gateway, asyncio.get_running_loop())
     mqtt.set_event_handler(processor.submit)
     app.state.mqtt = mqtt

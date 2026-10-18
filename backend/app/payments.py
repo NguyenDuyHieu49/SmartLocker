@@ -62,6 +62,11 @@ class PayOSGateway:
         )
         self.settings = settings
 
+    def confirm_webhook(self) -> None:
+        self.client.webhooks.confirm(
+            f"{self.settings.api_url}/api/v1/webhooks/payos"
+        )
+
     def create_link(
         self,
         *,

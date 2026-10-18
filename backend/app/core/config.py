@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     payos_client_id: str | None = None
     payos_api_key: str | None = None
     payos_checksum_key: str | None = None
+    payos_confirm_webhook_on_startup: bool = False
     momo_base_url: str = "https://test-payment.momo.vn"
     momo_partner_code: str | None = None
     momo_access_key: str | None = None

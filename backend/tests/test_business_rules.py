@@ -8,7 +8,7 @@ import pytest
 
 from app.core.config import Settings
 from app.models import Order
-from app.payments import MockPaymentGateway, MomoSandboxGateway
+from app.payments import MockPaymentGateway, MomoSandboxGateway, PayOSGateway
 from app.security import code_digest, derive_numeric_code, normalize_phone, verify_code
 from app.services.common import calculate_fee
 
@@ -89,6 +89,35 @@ def test_neon_postgres_url_is_converted_for_asyncpg() -> None:
     )
     assert settings.async_database_url == (
         "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    )
+
+
+def test_payos_webhook_uses_public_api_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, str] = {}
+
+    class FakeWebhooks:
+        def confirm(self, url: str) -> None:
+            captured["url"] = url
+
+    class FakePayOS:
+        def __init__(self, **_: str) -> None:
+            self.webhooks = FakeWebhooks()
+
+    monkeypatch.setattr("app.payments.PayOS", FakePayOS)
+    gateway = PayOSGateway(
+        Settings(
+            payos_client_id="client",
+            payos_api_key="api-key",
+            payos_checksum_key="checksum",
+            api_url="https://api.smartbox.id.vn",
+        )
+    )
+    gateway.confirm_webhook()
+
+    assert captured["url"] == (
+        "https://api.smartbox.id.vn/api/v1/webhooks/payos"
     )
 
 
