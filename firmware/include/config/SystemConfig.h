@@ -6,6 +6,7 @@ namespace SystemConfig {
 
 constexpr uint8_t TOTAL_BOXES = 5;
 constexpr uint8_t PCA9685_ADDRESS = 0x40;
+constexpr uint8_t RTC_DS3231_ADDRESS = 0x68;
 constexpr float SERVO_FREQUENCY_HZ = 50.0F;
 
 constexpr uint16_t DEFAULT_LOCK_ANGLE = 0;
@@ -13,6 +14,7 @@ constexpr uint16_t DEFAULT_UNLOCK_ANGLE = 90;
 constexpr uint16_t SERVO_MIN_PULSE_US = 500;
 constexpr uint16_t SERVO_MAX_PULSE_US = 2500;
 constexpr uint32_t SERVO_UNLOCK_HOLD_MS = 1200;
+constexpr uint32_t DOOR_OPEN_ALARM_MS = 15000;
 
 constexpr uint32_t SWITCH_DEBOUNCE_MS = 50;
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;

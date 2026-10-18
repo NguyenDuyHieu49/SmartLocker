@@ -1,8 +1,8 @@
 # SmartBox Phase 1
 
 Hệ thống tủ gửi đồ 5 ngăn cho shipper và người nhận, dùng ESP32-S3,
-PCA9685, 5 servo SG90, 5 công tắc hành trình, keypad 4x4 và TFT
-ST7789 240x240.
+PCA9685, 5 servo SG90, 5 công tắc hành trình, keypad 4x4, TFT
+ST7789 240x240, buzzer và RTC DS3231 tùy chọn.
 
 ## Thành phần
 
