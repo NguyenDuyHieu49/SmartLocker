@@ -123,6 +123,9 @@ async def create_order(
     )
     compartment.status = CompartmentStatus.RESERVED.value
     session.add(order)
+    # SQLAlchemy applies the UUID default during flush. The audit row requires
+    # the generated order id, so persist pending values before building it.
+    await session.flush()
     await add_audit(
         session,
         action="ORDER_CREATED",
