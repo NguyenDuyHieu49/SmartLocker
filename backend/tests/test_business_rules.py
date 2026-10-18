@@ -80,6 +80,18 @@ def test_railway_postgres_url_is_converted_for_asyncpg() -> None:
     assert settings.async_database_url == "postgresql+asyncpg://user:pass@host/db"
 
 
+def test_neon_postgres_url_is_converted_for_asyncpg() -> None:
+    settings = Settings(
+        database_url=(
+            "postgresql://user:pass@host/db"
+            "?sslmode=require&channel_binding=require"
+        )
+    )
+    assert settings.async_database_url == (
+        "postgresql+asyncpg://user:pass@host/db?ssl=require"
+    )
+
+
 def momo_gateway() -> MomoSandboxGateway:
     return MomoSandboxGateway(
         Settings(

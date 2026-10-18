@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -101,13 +102,25 @@ class Settings(BaseSettings):
 
     @property
     def async_database_url(self) -> str:
-        if self.database_url.startswith("postgresql://"):
-            return self.database_url.replace(
-                "postgresql://", "postgresql+asyncpg://", 1
-            )
-        if self.database_url.startswith("postgres://"):
-            return self.database_url.replace("postgres://", "postgresql+asyncpg://", 1)
-        return self.database_url
+        url = self.database_url
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        else:
+            return url
+
+        # Neon emits libpq parameters. SQLAlchemy forwards query parameters to
+        # asyncpg, which expects `ssl` and does not accept `sslmode` or
+        # `channel_binding`.
+        parsed = urlsplit(url)
+        query: list[tuple[str, str]] = []
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+            if key == "sslmode":
+                query.append(("ssl", value))
+            elif key != "channel_binding":
+                query.append((key, value))
+        return urlunsplit(parsed._replace(query=urlencode(query)))
 
 
 @lru_cache
