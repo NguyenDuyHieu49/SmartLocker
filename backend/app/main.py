@@ -59,6 +59,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     processor = DeviceEventProcessor(mqtt, payment_gateway, asyncio.get_running_loop())
     mqtt.set_event_handler(processor.submit)
     app.state.mqtt = mqtt
+    app.state.device_event_processor = processor
     app.state.payment_gateway = payment_gateway
     mqtt.start()
     try:

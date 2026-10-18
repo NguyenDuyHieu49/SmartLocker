@@ -55,7 +55,6 @@ void LocalWebServer::handleStatus() {
   for (uint8_t box = 0; box < SystemConfig::TOTAL_BOXES; ++box) {
     JsonObject item = boxes.add<JsonObject>();
     item["box"] = box;
-    item["occupied"] = storage_.getOccupied(box);
     item["door_closed"] = switches_.isDoorClosed(box);
   }
   String payload;

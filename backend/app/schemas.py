@@ -70,7 +70,7 @@ class CreatePaymentResponse(BaseModel):
 
 
 class PickupRequest(BaseModel):
-    otp: str = Field(min_length=4, max_length=12)
+    otp: str = Field(min_length=8, max_length=8, pattern=r"^\d{8}$")
 
 
 class ManualUnlockRequest(BaseModel):

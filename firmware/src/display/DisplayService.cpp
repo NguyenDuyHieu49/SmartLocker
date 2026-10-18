@@ -45,11 +45,22 @@ void DisplayService::centeredText(const String& text, int16_t y, uint8_t size,
 }
 
 void DisplayService::showIdle() {
+  showMainMenu();
+}
+
+void DisplayService::showMainMenu() {
   header("SMARTBOX", ST77XX_CYAN);
-  centeredText("A - GUI HANG", 76, 2, ST77XX_WHITE);
-  centeredText("B - NHAN HANG", 112, 2, ST77XX_WHITE);
-  centeredText("# Xac nhan", 170, 1, ST77XX_GREEN);
+  centeredText("1 - GUI HANG", 76, 2, ST77XX_WHITE);
+  centeredText("2 - NHAN HANG", 112, 2, ST77XX_WHITE);
+  centeredText("A Xac nhan", 170, 1, ST77XX_GREEN);
   centeredText("* Xoa  |  C Huy", 192, 1, ST77XX_YELLOW);
+}
+
+void DisplayService::showBoxSelect() {
+  header("CHON KICH THUOC", ST77XX_CYAN);
+  centeredText("1 - Ngan S", 82, 2, ST77XX_WHITE);
+  centeredText("2 - Ngan M", 122, 2, ST77XX_WHITE);
+  centeredText("C - Quay lai", 194, 1, ST77XX_YELLOW);
 }
 
 void DisplayService::showInput(const String& title, const String& value,
@@ -62,7 +73,7 @@ void DisplayService::showInput(const String& title, const String& value,
   }
   if (shown.isEmpty()) shown = "_";
   centeredText(shown, 95, 3, ST77XX_WHITE);
-  centeredText("# Xac nhan", 178, 1, ST77XX_GREEN);
+  centeredText("A Xac nhan", 178, 1, ST77XX_GREEN);
   centeredText("* Xoa  |  C Huy", 200, 1, ST77XX_YELLOW);
 }
 
@@ -115,5 +126,46 @@ void DisplayService::showEnterOtp(const String& orderCode) {
   centeredText(String("Don ") + orderCode, 70, 2, ST77XX_WHITE);
   centeredText("Nhap ma OTP", 112, 2, ST77XX_WHITE);
   centeredText("roi nhan #", 144, 2, ST77XX_WHITE);
+}
+
+void DisplayService::showDoorGuide(const String& mode, uint8_t box) {
+  header(mode == "deposit" ? "GUI HANG" : "NHAN HANG", ST77XX_GREEN);
+  centeredText(String("Ngan ") + String(box + 1), 76, 3, ST77XX_WHITE);
+  centeredText("Nhan A de mo tu", 135, 2, ST77XX_GREEN);
+  centeredText("Dong cua sau khi thao tac", 184, 1, ST77XX_YELLOW);
+}
+
+void DisplayService::showResult(const String& otp, uint8_t box) {
+  header("THANH TOAN XONG", ST77XX_GREEN);
+  centeredText(String("Ngan ") + String(box + 1), 55, 2, ST77XX_WHITE);
+  centeredText("MA NHAN HANG", 94, 1, ST77XX_YELLOW);
+  centeredText(otp, 120, 3, ST77XX_WHITE);
+  centeredText("Luu ma - Nhan A de mo", 190, 1, ST77XX_GREEN);
+}
+
+void DisplayService::showOverdue(uint8_t box, uint16_t days,
+                                 uint32_t dailyRate, uint32_t amount) {
+  header("QUA HAN", ST77XX_RED);
+  centeredText(String("Ngan ") + String(box + 1), 50, 2, ST77XX_WHITE);
+  centeredText(String("Tre ") + String(days) + " ngay", 84, 2, ST77XX_YELLOW);
+  centeredText(String(dailyRate) + " VND/ngay", 120, 1, ST77XX_WHITE);
+  centeredText(String("Tong: ") + String(amount) + " VND", 150, 2,
+               ST77XX_WHITE);
+  centeredText("Cho ma QR thanh toan", 200, 1, ST77XX_GREEN);
+}
+
+void DisplayService::showLoading(const String& mode) {
+  header("DANG XU LY", ST77XX_BLUE);
+  centeredText(mode == "verify_otp" ? "Dang xac thuc OTP"
+                                      : "Vui long cho",
+               104, 2, ST77XX_WHITE);
+}
+
+void DisplayService::showFinishPrompt(const String& mode, uint8_t box) {
+  header("DA DONG CUA", ST77XX_GREEN);
+  centeredText(String("Ngan ") + String(box + 1), 74, 3, ST77XX_WHITE);
+  centeredText("Nhan A de hoan tat", 135, 2, ST77XX_GREEN);
+  centeredText(mode == "deposit" ? "Xac nhan gui hang" : "Xac nhan nhan hang",
+               182, 1, ST77XX_YELLOW);
 }
 

@@ -1,52 +1,48 @@
 # SmartBox Phase 1
 
-Hệ thống tủ gửi đồ 5 ngăn cho shipper và người nhận, dùng ESP32-S3,
-PCA9685, 5 servo SG90, 5 công tắc hành trình, keypad 4x4, TFT
-ST7789 240x240, buzzer và RTC DS3231 tùy chọn.
+Tủ gửi đồ dùng ESP32-S3 gồm bốn ngăn cho thuê (`0..3`) và một ngăn kỹ thuật
+(`4`). Backend là nguồn sự thật cho đơn hàng, thanh toán và trạng thái ngăn;
+ESP32 xử lý keypad, TFT, servo và công tắc cửa qua MQTT.
 
 ## Thành phần
 
-- `firmware/`: PlatformIO/Arduino cho ESP32-S3, TFT, keypad, servo và MQTT.
-- `backend/`: FastAPI, PostgreSQL/SQLite, MQTT, OTP, payOS và nhật ký.
-- `dashboard/`: Nuxt SPA cho shipper, người nhận và admin.
-- `infrastructure/`: Mosquitto không xác thực chỉ dùng khi phát triển LAN.
-- `PHASE1_ARCHITECTURE.md`: kiến trúc và các quyết định kỹ thuật.
+- `firmware/`: PlatformIO/Arduino, PCA9685, servo, công tắc, keypad và TFT.
+- `backend/`: FastAPI, PostgreSQL/SQLite, MQTT, OTP 8 số và payOS.
+- `dashboard/`: Nuxt SPA cho khách hàng, shipper và admin.
+- `PHASE1_ARCHITECTURE.md`: kiến trúc đã đồng bộ với MQTT specification.
 - `DEPLOYMENT_SMARTBOX_ID_VN.md`: checklist triển khai tên miền thật.
 
-## Nghiệp vụ đã cài đặt
+## Luồng nghiệp vụ
 
-1. Shipper tạo đơn, hệ thống giữ một ngăn và sinh mã gửi hàng.
-2. Shipper nhập mã trên keypad hoặc mở từ dashboard.
-3. Công tắc cửa xác nhận kiện hàng đã được cất và bắt đầu tính phí.
-4. Người nhận nhập mã đơn; TFT/dashboard hiển thị QR thanh toán payOS.
-5. Webhook payOS có chữ ký hợp lệ xác nhận tiền và cho phép nhập OTP.
-6. OTP đúng mới mở tủ; đóng cửa kết thúc đơn và trả ngăn về trạng thái trống.
+1. Tại tủ, shipper chọn cỡ S/M và nhập số điện thoại người nhận.
+2. Backend cấp một ngăn thuê phù hợp, tạo đơn, OTP 8 số và QR phí gửi.
+3. Webhook thanh toán hợp lệ cho phép người dùng xác nhận mở ngăn.
+4. Sau khi đặt hàng và đóng cửa, shipper nhấn `A`; backend mới chuyển đơn sang
+   `STORED` và ngăn sang `OCCUPIED`.
+5. Người nhận nhập OTP. Nếu chưa quá hạn, hệ thống cho xác nhận mở; nếu quá
+   hạn, hệ thống yêu cầu thanh toán phụ phí trước.
+6. Sau khi lấy hàng và đóng cửa, người nhận nhấn `A`; backend chuyển đơn sang
+   `COMPLETED` và trả ngăn về `AVAILABLE`.
+
+Ngăn số 4 không được cấp cho đơn hàng. Việc cửa đóng/mở chỉ là trạng thái vật
+lý và không tự thay đổi trạng thái nghiệp vụ nếu thiếu `confirm_finish`.
 
 ## Chạy local
 
 ```bash
-cd infrastructure
-docker compose up -d
-
-cd ../backend
-cp .env.example .env
+cd infrastructure && docker compose up -d
+cd ../backend && cp .env.example .env
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
-
-cd ../dashboard
-cp .env.example .env
-npm install
-npm run dev
+cd ../dashboard && cp .env.example .env
+npm install && npm run dev
 ```
-
-Trước khi nạp firmware, cập nhật GPIO và mạng trong
-`firmware/include/config/PinConfig.h` và
-`firmware/include/config/NetworkConfig.h`.
 
 ```bash
 cd firmware
 ~/.platformio/penv/bin/pio run
 ```
 
-Không commit `.env`, không public Mosquitto anonymous cổng 1883 và không
-dùng `MQTT_TLS_INSECURE` trong production.
+Không commit `.env`, không mở broker anonymous ra Internet và không bật
+`MQTT_TLS_INSECURE` trong production. Nút giả lập đóng cửa trên dashboard chỉ
+hoạt động khi backend đặt `ALLOW_DOOR_SIMULATION=true`.

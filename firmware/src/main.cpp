@@ -23,7 +23,7 @@ PcaServoDriver servo(storage);
 LimitSwitchDriver switches;
 BuzzerDriver buzzer;
 RtcDriver rtc;
-MqttService mqtt(network, storage, servo, switches, display, keypad);
+MqttService mqtt(network, storage, servo, switches, display, keypad, rtc);
 LocalWebServer localWeb(network, storage, mqtt, servo, switches);
 
 namespace {
@@ -62,13 +62,14 @@ void onDoorChanged(uint8_t box, bool doorClosed) {
   Serial.printf("[DOOR] box=%u closed=%s\n", box,
                 doorClosed ? "true" : "false");
   doorOpenedAt[box] = doorClosed ? 0 : millis();
+  keypad.onDoorStateChanged(box, doorClosed);
   mqtt.publishDoorEvent(box, doorClosed);
 }
 
-void onAccessRequest(const String& action, const String& value,
-                     const String& orderCode) {
+void onKeypadEvent(const String& action, const String& value,
+                   const String& extra) {
   buzzer.beep(50);
-  mqtt.publishAccessRequest(action, value, orderCode);
+  mqtt.publishKeypadEvent(action, value, extra);
 }
 
 void setup() {
@@ -95,7 +96,7 @@ void setup() {
   }
   buzzer.begin();
   display.begin();
-  keypad.begin(onAccessRequest);
+  keypad.begin(onKeypadEvent);
   network.begin();
   configTime(0, 0, NetworkConfig::NTP_SERVER_1, NetworkConfig::NTP_SERVER_2);
   mqtt.begin();

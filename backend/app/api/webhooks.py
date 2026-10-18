@@ -9,6 +9,7 @@ from app.dependencies import SessionDep
 from app.models import Compartment, LockerStation, Order, Payment, WebhookEvent
 from app.mqtt.service import MqttService
 from app.payments import PaymentGateway
+from app.security import derive_numeric_code
 from app.services.payment_service import mark_payment_paid
 
 router = APIRouter(prefix="/api/v1/webhooks", tags=["webhooks"])
@@ -59,6 +60,7 @@ async def _process_payment_webhook(
         )
     )
     await session.flush()
+    is_deposit_payment = order.stored_at is None
     await mark_payment_paid(session, payment, order, reference=verified.reference)
     compartment = await session.get(Compartment, order.compartment_id)
     station = (
@@ -66,13 +68,29 @@ async def _process_payment_webhook(
         if compartment
         else None
     )
-    if station is not None:
+    if station is not None and compartment is not None:
         mqtt = cast(MqttService, request.app.state.mqtt)
         try:
-            mqtt.show_ui(
-                station.device_id,
-                {"screen": "enter_otp", "order_code": order.order_code},
-            )
+            if is_deposit_payment:
+                mqtt.show_ui(
+                    station.device_id,
+                    {
+                        "screen": "result",
+                        "otp": derive_numeric_code(
+                            order.order_code, "pickup", length=8
+                        ),
+                        "box": compartment.number,
+                    },
+                )
+            else:
+                mqtt.show_ui(
+                    station.device_id,
+                    {
+                        "screen": "door_guide",
+                        "mode": "pickup",
+                        "box": compartment.number,
+                    },
+                )
         except RuntimeError:
             pass
     return {"success": True, "duplicate": False}

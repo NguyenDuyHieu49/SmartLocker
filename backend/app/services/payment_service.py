@@ -16,8 +16,9 @@ async def create_or_get_payment(
     order: Order,
     *,
     actor_id: str | None,
+    amount_vnd: int | None = None,
 ) -> tuple[Payment, str]:
-    amount = calculate_fee(order)
+    amount = amount_vnd if amount_vnd is not None else calculate_fee(order)
     existing = await session.scalar(
         select(Payment)
         .where(

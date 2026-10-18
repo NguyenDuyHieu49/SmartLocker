@@ -9,9 +9,6 @@ class StorageManager {
  public:
   bool begin();
 
-  bool getOccupied(uint8_t box) const;
-  void setOccupied(uint8_t box, bool occupied);
-
   uint16_t getLockAngle(uint8_t box) const;
   uint16_t getUnlockAngle(uint8_t box) const;
   bool setServoCalibration(uint8_t box, uint16_t lockAngle,

@@ -62,7 +62,7 @@ def generate_numeric_code(length: int = 6) -> str:
     return "".join(str(secrets.randbelow(10)) for _ in range(length))
 
 
-def derive_numeric_code(identifier: str, purpose: str, length: int = 6) -> str:
+def derive_numeric_code(identifier: str, purpose: str, length: int = 8) -> str:
     pepper = get_settings().otp_pepper.encode()
     digest = hmac.new(
         pepper, f"{purpose}:{identifier}".encode(), hashlib.sha256

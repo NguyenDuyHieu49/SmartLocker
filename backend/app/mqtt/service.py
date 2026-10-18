@@ -17,7 +17,16 @@ from paho.mqtt.properties import Properties
 from paho.mqtt.reasoncodes import ReasonCode
 
 from app.core.config import Settings
-from app.mqtt.models import CommandRecord
+from app.mqtt.models import (
+    BoxesStatus,
+    CommandRecord,
+    ConfirmFinishEvent,
+    DoorEvent,
+    Heartbeat,
+    KeypadEvent,
+    RebootAck,
+    UnlockResult,
+)
 from app.mqtt.registry import DeviceRegistry
 
 logger = logging.getLogger(__name__)
@@ -29,7 +38,11 @@ class MqttService:
         self.registry = registry
         self.client = Client(
             callback_api_version=CallbackAPIVersion.VERSION2,
-            client_id=settings.mqtt_client_id,
+            client_id=(
+                f"{settings.mqtt_client_id}_{uuid4().hex[:6]}"
+                if settings.mqtt_client_id
+                else f"backend_{uuid4().hex[:6]}"
+            ),
             protocol=MQTTv311,
         )
         if settings.mqtt_username:
@@ -76,9 +89,13 @@ class MqttService:
     ) -> None:
         del userdata, flags, properties
         if reason_code.is_failure:
-            logger.error("MQTT connection failed: %s", reason_code)
+            logger.error("MQTT connection failed: reason=%s", reason_code)
             return
-        logger.info("Connected to MQTT broker")
+        logger.info(
+            "MQTT backend connected to broker %s:%s",
+            self.settings.mqtt_host,
+            self.settings.mqtt_port,
+        )
         client.subscribe("smartbox/+/status/boxes", qos=0)
         client.subscribe("smartbox/+/status/heartbeat", qos=0)
         client.subscribe("smartbox/+/status/availability", qos=1)
@@ -94,7 +111,7 @@ class MqttService:
     ) -> None:
         del client, userdata, disconnect_flags, properties
         if reason_code.is_failure:
-            logger.warning("Unexpected MQTT disconnect: %s", reason_code)
+            logger.warning("MQTT broker disconnected unexpectedly: %s", reason_code)
 
     def _on_message(self, client: Client, userdata: Any, message: MQTTMessage) -> None:
         del client, userdata
@@ -106,6 +123,7 @@ class MqttService:
         device_id, category, event_name = parts[1], parts[2], parts[3]
         try:
             raw = message.payload.decode("utf-8")
+            logger.debug("MQTT received topic=%s payload=%s", message.topic, raw)
             if category == "status" and event_name == "availability":
                 self.registry.set_availability(device_id, raw == "online")
                 return
@@ -122,15 +140,30 @@ class MqttService:
         payload: dict[str, Any],
     ) -> None:
         if category == "status" and event_name == "boxes":
+            payload = BoxesStatus.model_validate(payload).model_dump(mode="json")
             self.registry.update_boxes(device_id, payload)
             self._notify(device_id, "boxes", payload)
             return
         if category == "status" and event_name == "heartbeat":
+            payload = Heartbeat.model_validate(payload).model_dump(mode="json")
             self.registry.update_heartbeat(device_id, payload)
             self._notify(device_id, "heartbeat", payload)
             return
 
         if category != "evt":
+            return
+        if event_name == "door":
+            payload = DoorEvent.model_validate(payload).model_dump(mode="json")
+        elif event_name == "unlock_result":
+            payload = UnlockResult.model_validate(payload).model_dump(mode="json")
+        elif event_name == "reboot_ack":
+            payload = RebootAck.model_validate(payload).model_dump(mode="json")
+        elif event_name == "keypad":
+            payload = KeypadEvent.model_validate(payload).model_dump(mode="json")
+        elif event_name == "confirm_finish":
+            payload = ConfirmFinishEvent.model_validate(payload).model_dump(mode="json")
+        else:
+            logger.warning("Ignoring unsupported MQTT event: %s", event_name)
             return
         self.registry.append_event(device_id, event_name, payload)
         request_id = payload.get("request_id")
@@ -178,21 +211,6 @@ class MqttService:
             device_id,
             "unlock",
             {"box": box, "request_id": request_id},
-            qos=1,
-        )
-
-    def set_box(
-        self,
-        device_id: str,
-        box: int,
-        occupied: bool,
-        request_id: str | None = None,
-    ) -> tuple[str, str]:
-        request_id = request_id or f"req_{uuid4().hex}"
-        return self._publish_command(
-            device_id,
-            "set_box",
-            {"box": box, "occupied": occupied, "request_id": request_id},
             qos=1,
         )
 

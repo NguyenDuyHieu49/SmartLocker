@@ -10,8 +10,8 @@ def test_registry_tracks_box_status_and_heartbeat() -> None:
             "device_id": "SB-001",
             "timestamp": 1_729_148_400,
             "boxes": [
-                {"box": 0, "occupied": False, "door_closed": True},
-                {"box": 1, "occupied": True, "door_closed": False},
+                {"box": 0, "size": "S", "door_closed": True},
+                {"box": 1, "size": "S", "door_closed": False},
             ],
         },
     )
@@ -28,7 +28,7 @@ def test_registry_tracks_box_status_and_heartbeat() -> None:
 
     state = registry.get_device("SB-001")
     assert state.online is True
-    assert state.boxes[1].occupied is True
+    assert state.boxes[1].size == "S"
     assert state.boxes[1].door_closed is False
     assert state.heartbeat is not None
     assert state.heartbeat.wifi_rssi == -45

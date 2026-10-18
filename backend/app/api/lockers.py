@@ -51,7 +51,7 @@ async def locker_status(
             LockerBoxView(
                 box=item.number,
                 business_status=item.status,
-                occupied=physical_box.occupied if physical_box else None,
+                occupied=item.status == "OCCUPIED",
                 door_closed=physical_box.door_closed if physical_box else None,
             )
         )

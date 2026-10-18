@@ -110,6 +110,7 @@ class Compartment(Base):
         ForeignKey("locker_stations.id"), index=True
     )
     number: Mapped[int] = mapped_column(Integer)
+    size: Mapped[str] = mapped_column(String(8), default="S")
     status: Mapped[str] = mapped_column(String(30), default=CompartmentStatus.AVAILABLE)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
@@ -121,7 +122,9 @@ class Order(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_string)
     order_code: Mapped[str] = mapped_column(String(12), unique=True, index=True)
-    shipper_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    shipper_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), index=True, nullable=True
+    )
     recipient_phone: Mapped[str] = mapped_column(String(20), index=True)
     recipient_name: Mapped[str] = mapped_column(String(120))
     compartment_id: Mapped[str] = mapped_column(

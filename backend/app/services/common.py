@@ -54,11 +54,17 @@ async def order_view(
         stored_at=as_utc(order.stored_at),
         paid_at=as_utc(order.paid_at),
         completed_at=as_utc(order.completed_at),
-        fee_vnd=calculate_fee(order),
+        fee_vnd=(
+            max(0, calculate_fee(order) - order.base_fee_vnd)
+            if order.stored_at is not None
+            else order.base_fee_vnd
+        ),
         deposit_code=deposit_code,
         pickup_otp=(
-            derive_numeric_code(order.order_code, "pickup")
-            if reveal_pickup_otp and order.status == "PAID"
+            derive_numeric_code(order.order_code, "pickup", length=8)
+            if reveal_pickup_otp
+            and order.status
+            in {"STORED", "PAYMENT_PENDING", "PAID", "PICKUP_AUTHORIZED", "PICKUP_OPEN"}
             else None
         ),
     )

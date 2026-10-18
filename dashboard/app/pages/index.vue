@@ -11,6 +11,7 @@ const locker = ref<LockerStatus | null>(null)
 const audits = ref<AuditLog[]>([])
 const payment = ref<Payment | null>(null)
 const otpByOrder = reactive<Record<string, string>>({})
+const depositOpenedForSimulation = reactive<Record<string, boolean>>({})
 const manual = reactive({ box: 0, reason: 'Hỗ trợ khách hàng tại tủ' })
 const busy = ref('')
 const error = ref('')
@@ -41,7 +42,7 @@ function flash(message: string, isError = false) {
 function apiError(err: unknown) {
   const value = err as { data?: { detail?: string }, message?: string }
   const detail = value.data?.detail || value.message || 'Không thể kết nối máy chủ'
-  return ({ invalid_credentials: 'Số điện thoại hoặc mật khẩu không đúng.', phone_already_registered: 'Số điện thoại đã đăng ký.', invalid_otp: 'Mã OTP không đúng.', payment_required: 'Vui lòng thanh toán trước.', no_available_compartment: 'Hiện không còn ngăn tủ trống.' } as Record<string, string>)[detail] || detail
+  return ({ invalid_credentials: 'Số điện thoại hoặc mật khẩu không đúng.', phone_already_registered: 'Số điện thoại đã đăng ký.', invalid_otp: 'Mã OTP không đúng.', payment_required: 'Vui lòng thanh toán trước.', no_available_compartment: 'Hiện không còn ngăn tủ trống.', door_simulation_disabled: 'Chức năng giả lập cửa đang bị tắt trên máy chủ.', open_compartment_first: 'Hãy bấm mở ngăn trước khi giả lập đóng cửa.' } as Record<string, string>)[detail] || detail
 }
 
 function apiErrorDetail(err: unknown) {
@@ -96,7 +97,17 @@ async function createOrder() {
 async function authorizeDeposit(order: Order) {
   await run(`deposit-${order.id}`, async () => {
     await api(`/api/v1/orders/${order.order_code}/deposit/authorize`, { method: 'POST' })
+    depositOpenedForSimulation[order.id] = true
     flash(`Đã gửi lệnh mở ngăn ${order.box + 1}.`); await refresh(true)
+  })
+}
+
+async function simulateDepositClose(order: Order) {
+  await run(`close-${order.id}`, async () => {
+    await api(`/api/v1/orders/${order.order_code}/deposit/simulate-close`, { method: 'POST' })
+    delete depositOpenedForSimulation[order.id]
+    flash(`Đã giả lập đóng ngăn ${order.box + 1}. Đơn hàng đã được lưu.`)
+    await refresh(true)
   })
 }
 
@@ -170,12 +181,12 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
       <section v-if="user.role === 'SHIPPER'" class="workspace split">
         <form class="panel create-panel" @submit.prevent="createOrder"><p class="eyebrow">TẠO ĐƠN MỚI</p><h2>Thông tin người nhận</h2><label>Họ và tên<input v-model="orderForm.recipient_name" required placeholder="Tên người nhận"></label><label>Số điện thoại<input v-model="orderForm.recipient_phone" required inputmode="tel" placeholder="09xx xxx xxx"></label><label>Trạm tủ<select v-model="orderForm.station_device_id"><option value="SB-001">SmartBox 001 · Trạm demo</option></select></label><button class="primary full" :disabled="busy === 'create-order'">Tạo đơn và giữ ngăn <span>→</span></button></form>
         <div class="panel"><div class="panel-head"><div><p class="eyebrow">ĐƠN HÀNG</p><h2>Đang xử lý</h2></div><span class="count">{{ activeOrders.length }} đơn</span></div><div v-if="!orders.length" class="empty">Chưa có đơn hàng. Tạo đơn đầu tiên ở bên trái.</div>
-          <article v-for="order in orders" :key="order.id" class="order-card"><div class="order-top"><div><small>MÃ ĐƠN</small><strong>#{{ order.order_code }}</strong></div><span class="pill" :data-status="order.status">{{ translateStatus(order.status) }}</span></div><div class="order-grid"><p><small>NGƯỜI NHẬN</small>{{ order.recipient_name }}<br><span>{{ order.recipient_phone }}</span></p><p><small>VỊ TRÍ</small>Ngăn {{ order.box + 1 }}<br><span>{{ order.station_device_id }}</span></p><p v-if="order.deposit_code"><small>MÃ GỬI HÀNG</small><b class="code">{{ order.deposit_code }}</b></p></div><button v-if="order.status === 'RESERVED'" class="primary compact" :disabled="busy === `deposit-${order.id}`" @click="authorizeDeposit(order)">Mở ngăn để gửi hàng →</button></article>
+          <article v-for="order in orders" :key="order.id" class="order-card"><div class="order-top"><div><small>MÃ ĐƠN</small><strong>#{{ order.order_code }}</strong></div><span class="pill" :data-status="order.status">{{ translateStatus(order.status) }}</span></div><div class="order-grid"><p><small>NGƯỜI NHẬN</small>{{ order.recipient_name }}<br><span>{{ order.recipient_phone }}</span></p><p><small>VỊ TRÍ</small>Ngăn {{ order.box + 1 }}<br><span>{{ order.station_device_id }}</span></p><p v-if="order.deposit_code"><small>MÃ GỬI HÀNG</small><b class="code">{{ order.deposit_code }}</b></p></div><div class="order-actions"><button v-if="order.status === 'RESERVED' && !depositOpenedForSimulation[order.id]" class="primary compact" :disabled="busy === `deposit-${order.id}`" @click="authorizeDeposit(order)">Mở ngăn để gửi hàng →</button><button v-if="depositOpenedForSimulation[order.id] || ['DEPOSIT_AUTHORIZED', 'DEPOSIT_OPEN'].includes(order.status)" class="secondary compact" :disabled="busy === `close-${order.id}`" @click="simulateDepositClose(order)">{{ busy === `close-${order.id}` ? 'Đang giả lập…' : 'Giả lập đóng cửa' }} <span>✓</span></button></div></article>
         </div>
       </section>
 
       <section v-if="user.role === 'CUSTOMER'" class="workspace"><div v-if="!orders.length" class="panel empty large"><span class="empty-icon">◇</span><h2>Chưa có kiện hàng</h2><p>Đơn gửi tới số {{ user.phone }} sẽ xuất hiện tại đây.</p></div>
-        <article v-for="order in orders" :key="order.id" class="customer-order"><div class="package-visual"><span class="locker-number">{{ String(order.box + 1).padStart(2, '0') }}</span><i class="locker-line" /><b>{{ order.station_device_id }}</b><small>NGĂN TỦ CỦA BẠN</small></div><div class="package-info"><div class="order-top"><div><p class="eyebrow">KIỆN HÀNG #{{ order.order_code }}</p><h2>{{ translateStatus(order.status) }}</h2></div><span class="pill" :data-status="order.status">{{ order.status }}</span></div><div class="facts"><p><small>NGƯỜI NHẬN</small>{{ order.recipient_name }}</p><p><small>GỬI VÀO TỦ</small>{{ date(order.stored_at) }}</p><p><small>PHÍ HIỆN TẠI</small><b>{{ money(order.fee_vnd) }}</b></p></div><button v-if="['STORED', 'PAYMENT_PENDING'].includes(order.status)" class="primary" :disabled="busy === `payment-${order.id}`" @click="createPayment(order)">Thanh toán và nhận hàng <span>→</span></button><div v-if="order.status === 'PAID'" class="otp-row"><label>OTP nhận hàng<input v-model="otpByOrder[order.id]" maxlength="12" inputmode="numeric" :placeholder="order.pickup_otp ? `OTP: ${order.pickup_otp}` : 'Nhập OTP'"></label><button class="primary" :disabled="busy === `pickup-${order.id}`" @click="pickup(order)">Mở tủ →</button></div><p v-if="order.status === 'COMPLETED'" class="complete-note">✓ Kiện hàng đã được nhận lúc {{ date(order.completed_at) }}</p></div></article>
+        <article v-for="order in orders" :key="order.id" class="customer-order"><div class="package-visual"><span class="locker-number">{{ String(order.box + 1).padStart(2, '0') }}</span><i class="locker-line" /><b>{{ order.station_device_id }}</b><small>NGĂN TỦ CỦA BẠN</small></div><div class="package-info"><div class="order-top"><div><p class="eyebrow">KIỆN HÀNG #{{ order.order_code }}</p><h2>{{ translateStatus(order.status) }}</h2></div><span class="pill" :data-status="order.status">{{ order.status }}</span></div><div class="facts"><p><small>NGƯỜI NHẬN</small>{{ order.recipient_name }}</p><p><small>GỬI VÀO TỦ</small>{{ date(order.stored_at) }}</p><p><small>PHỤ PHÍ QUÁ HẠN</small><b>{{ money(order.fee_vnd) }}</b></p></div><button v-if="order.status === 'STORED' && order.fee_vnd > 0" class="primary" :disabled="busy === `payment-${order.id}`" @click="createPayment(order)">Thanh toán phụ phí <span>→</span></button><div v-if="order.pickup_otp && ((order.status === 'STORED' && order.fee_vnd === 0) || order.status === 'PAID')" class="otp-row"><label>OTP nhận hàng<input v-model="otpByOrder[order.id]" maxlength="8" inputmode="numeric" :placeholder="`OTP: ${order.pickup_otp}`"></label><button class="primary" :disabled="busy === `pickup-${order.id}`" @click="pickup(order)">Mở tủ →</button></div><p v-if="order.status === 'COMPLETED'" class="complete-note">✓ Kiện hàng đã được nhận lúc {{ date(order.completed_at) }}</p></div></article>
       </section>
 
       <section v-if="user.role === 'ADMIN'" class="workspace admin-grid"><div class="panel station-panel"><div class="panel-head"><div><p class="eyebrow">TRẠNG THÁI TỦ</p><h2>5 ngăn tại SB-001</h2></div><span class="online-badge" :class="{ offline: !locker?.online }"><i /> {{ locker?.online ? 'Đang kết nối' : 'Mất kết nối' }}</span></div><div class="locker-map"><div v-for="box in locker?.boxes" :key="box.box" class="locker-cell" :class="box.business_status.toLowerCase()"><b>{{ String(box.box + 1).padStart(2, '0') }}</b><span>{{ translateStatus(box.business_status) }}</span><small>{{ box.door_closed === false ? 'Cửa đang mở' : 'Cửa đóng' }}</small></div></div></div>

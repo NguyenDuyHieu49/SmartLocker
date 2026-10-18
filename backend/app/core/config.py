@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     access_token_minutes: int = 720
     otp_pepper: str = "change-this-before-production"
     demo_mode: bool = True
+    allow_door_simulation: bool = False
     bootstrap_admin_phone: str = "0900000000"
     bootstrap_admin_password: str = "Admin@12345"
 

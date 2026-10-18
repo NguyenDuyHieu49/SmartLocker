@@ -8,12 +8,20 @@ class DisplayService {
  public:
   bool begin();
   void showIdle();
+  void showMainMenu();
+  void showBoxSelect();
   void showInput(const String& title, const String& value, bool secret = false);
   void showMessage(const String& title, const String& message,
                    uint16_t color = ST77XX_WHITE);
   void showPayment(const String& orderCode, uint32_t amount,
                    const String& qrData);
   void showEnterOtp(const String& orderCode);
+  void showDoorGuide(const String& mode, uint8_t box);
+  void showResult(const String& otp, uint8_t box);
+  void showOverdue(uint8_t box, uint16_t days, uint32_t dailyRate,
+                   uint32_t amount);
+  void showLoading(const String& mode);
+  void showFinishPrompt(const String& mode, uint8_t box);
 
  private:
   void header(const String& title, uint16_t color);

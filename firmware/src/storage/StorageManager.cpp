@@ -9,16 +9,6 @@ String StorageManager::keyFor(const char* prefix, uint8_t box) const {
   return String(prefix) + String(box);
 }
 
-bool StorageManager::getOccupied(uint8_t box) const {
-  if (!ready_ || box >= SystemConfig::TOTAL_BOXES) return false;
-  return preferences_.getBool(keyFor("occ", box).c_str(), false);
-}
-
-void StorageManager::setOccupied(uint8_t box, bool occupied) {
-  if (!ready_ || box >= SystemConfig::TOTAL_BOXES) return;
-  preferences_.putBool(keyFor("occ", box).c_str(), occupied);
-}
-
 uint16_t StorageManager::getLockAngle(uint8_t box) const {
   if (!ready_ || box >= SystemConfig::TOTAL_BOXES) {
     return SystemConfig::DEFAULT_LOCK_ANGLE;

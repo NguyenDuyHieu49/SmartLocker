@@ -7,7 +7,6 @@ from app.mqtt.models import (
     CommandAccepted,
     CommandRecord,
     DeviceState,
-    SetBoxCommand,
     UnlockCommand,
 )
 from app.mqtt.service import MqttService
@@ -56,20 +55,6 @@ def get_command(request_id: str, request: Request) -> CommandRecord:
 def unlock(device_id: str, command: UnlockCommand, request: Request) -> CommandAccepted:
     request_id, topic = publish_or_503(
         lambda: mqtt_service(request).unlock(device_id, command.box)
-    )
-    return CommandAccepted(request_id=request_id, topic=topic)
-
-
-@router.post(
-    "/{device_id}/set-box",
-    response_model=CommandAccepted,
-    status_code=status.HTTP_202_ACCEPTED,
-)
-def set_box(
-    device_id: str, command: SetBoxCommand, request: Request
-) -> CommandAccepted:
-    request_id, topic = publish_or_503(
-        lambda: mqtt_service(request).set_box(device_id, command.box, command.occupied)
     )
     return CommandAccepted(request_id=request_id, topic=topic)
 

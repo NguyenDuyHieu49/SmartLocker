@@ -20,8 +20,25 @@ async def initialize_database(settings: Settings) -> None:
             )
             session.add(station)
             await session.flush()
-            for number in range(5):
-                session.add(Compartment(station_id=station.id, number=number))
+            sizes = ["S", "S", "M", "S", "TECH"]
+            for number, size in enumerate(sizes):
+                session.add(
+                    Compartment(station_id=station.id, number=number, size=size)
+                )
+        else:
+            sizes = ["S", "S", "M", "S", "TECH"]
+            compartments = list(
+                (
+                    await session.scalars(
+                        select(Compartment)
+                        .where(Compartment.station_id == station.id)
+                        .order_by(Compartment.number)
+                    )
+                ).all()
+            )
+            for compartment in compartments:
+                if 0 <= compartment.number < len(sizes):
+                    compartment.size = sizes[compartment.number]
 
         phone = normalize_phone(settings.bootstrap_admin_phone)
         admin = await session.scalar(select(User).where(User.phone == phone))

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class BoxStatus(BaseModel):
     box: int = Field(ge=0, le=4)
-    occupied: bool
+    size: Literal["S", "M", "TECH"]
     door_closed: bool
 
 
@@ -37,10 +37,16 @@ class UnlockResult(BaseModel):
     error: str | None = None
 
 
-class SetBoxResult(BaseModel):
+class KeypadEvent(BaseModel):
+    action: Literal["check_box", "deposit_phone", "pickup_otp", "open_confirmed"]
+    value: str
+    extra: str = ""
+
+
+class ConfirmFinishEvent(BaseModel):
     box: int = Field(ge=0, le=4)
-    request_id: str
-    success: bool
+    action: Literal["deposit_confirmed", "pickup_confirmed"]
+    timestamp: int = Field(ge=0)
 
 
 class RebootAck(BaseModel):
@@ -70,11 +76,6 @@ class DeviceState(BaseModel):
 
 class UnlockCommand(BaseModel):
     box: int = Field(ge=0, le=4)
-
-
-class SetBoxCommand(BaseModel):
-    box: int = Field(ge=0, le=4)
-    occupied: bool
 
 
 class CommandAccepted(BaseModel):

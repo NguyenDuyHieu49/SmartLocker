@@ -58,7 +58,7 @@ def test_pickup_otp_is_stable_but_scoped_to_order() -> None:
     first = derive_numeric_code("12345678", "pickup")
     assert first == derive_numeric_code("12345678", "pickup")
     assert first != derive_numeric_code("87654321", "pickup")
-    assert len(first) == 6 and first.isdigit()
+    assert len(first) == 8 and first.isdigit()
 
 
 def test_invalid_phone_is_rejected() -> None:

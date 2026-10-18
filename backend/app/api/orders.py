@@ -1,4 +1,5 @@
 import secrets
+import time
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -9,8 +10,10 @@ from app.core.config import get_settings
 from app.dependencies import CurrentUser, SessionDep, require_roles
 from app.models import (
     CommandPurpose,
+    CommandStatus,
     Compartment,
     CompartmentStatus,
+    DeviceCommand,
     LockerStation,
     Order,
     OrderStatus,
@@ -37,6 +40,7 @@ from app.security import (
 )
 from app.services.commands import publish_unlock
 from app.services.common import add_audit, calculate_fee, order_view
+from app.services.device_events import DeviceEventProcessor
 from app.services.payment_service import create_or_get_payment, mark_payment_paid
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
@@ -96,6 +100,8 @@ async def create_order(
         .where(
             Compartment.station_id == station.id,
             Compartment.status == CompartmentStatus.AVAILABLE.value,
+            Compartment.number < 4,
+            Compartment.size == "S",
         )
         .order_by(Compartment.number)
         .limit(1)
@@ -105,7 +111,7 @@ async def create_order(
 
     order_code = f"{secrets.randbelow(100_000_000):08d}"
     deposit_code = generate_numeric_code(6)
-    pickup_otp = derive_numeric_code(order_code, "pickup")
+    pickup_otp = derive_numeric_code(order_code, "pickup", length=8)
     order = Order(
         order_code=order_code,
         shipper_id=user.id,
@@ -206,6 +212,108 @@ async def authorize_deposit(
     return {"request_id": command.request_id, "status": command.status}
 
 
+@router.post("/{order_code}/deposit/simulate-close")
+async def simulate_deposit_close(
+    order_code: str,
+    request: Request,
+    session: SessionDep,
+    user: ShipperOrAdmin,
+) -> dict[str, bool]:
+    if not settings.allow_door_simulation:
+        raise HTTPException(status_code=404, detail="door_simulation_disabled")
+
+    order = await _load_order(session, order_code)
+    if user.role != UserRole.ADMIN.value and order.shipper_id != user.id:
+        raise HTTPException(status_code=403, detail="forbidden")
+    if order.status == OrderStatus.STORED.value:
+        return {"success": True}
+    if order.status not in {
+        OrderStatus.RESERVED.value,
+        OrderStatus.DEPOSIT_AUTHORIZED.value,
+        OrderStatus.DEPOSIT_OPEN.value,
+    }:
+        raise HTTPException(status_code=409, detail="invalid_order_state")
+
+    compartment = await session.get(Compartment, order.compartment_id)
+    station = (
+        await session.get(LockerStation, compartment.station_id)
+        if compartment
+        else None
+    )
+    if compartment is None or station is None:
+        raise HTTPException(status_code=500, detail="locker_mapping_missing")
+
+    command = await session.scalar(
+        select(DeviceCommand)
+        .where(
+            DeviceCommand.order_id == order.id,
+            DeviceCommand.purpose == CommandPurpose.DEPOSIT.value,
+            DeviceCommand.status.in_(
+                [
+                    CommandStatus.PUBLISHED.value,
+                    CommandStatus.ACKNOWLEDGED.value,
+                ]
+            ),
+        )
+        .order_by(DeviceCommand.created_at.desc())
+    )
+    if command is None:
+        raise HTTPException(status_code=409, detail="open_compartment_first")
+
+    processor = cast(
+        DeviceEventProcessor, request.app.state.device_event_processor
+    )
+    if command.status == CommandStatus.PUBLISHED.value:
+        await processor.handle(
+            station.device_id,
+            "unlock_result",
+            {
+                "box": compartment.number,
+                "request_id": command.request_id,
+                "success": True,
+                "error": None,
+            },
+        )
+    simulated_at = int(time.time())
+    await processor.handle(
+        station.device_id,
+        "door",
+        {
+            "box": compartment.number,
+            "door_closed": False,
+            "timestamp": simulated_at,
+        },
+    )
+    await processor.handle(
+        station.device_id,
+        "door",
+        {
+            "box": compartment.number,
+            "door_closed": True,
+            "timestamp": simulated_at + 1,
+        },
+    )
+    await processor.handle(
+        station.device_id,
+        "confirm_finish",
+        {
+            "action": "deposit_confirmed",
+            "box": compartment.number,
+            "timestamp": simulated_at + 2,
+        },
+    )
+    await add_audit(
+        session,
+        action="DOOR_CLOSE_SIMULATED",
+        entity_type="order",
+        entity_id=order.id,
+        actor_id=user.id,
+        detail={"device_id": station.device_id, "box": compartment.number},
+    )
+    await session.commit()
+    return {"success": True}
+
+
 @router.get("/{order_code}/pickup-quote", response_model=PickupQuote)
 async def pickup_quote(
     order_code: str, session: SessionDep, user: CurrentUser
@@ -220,7 +328,7 @@ async def pickup_quote(
         raise HTTPException(status_code=409, detail="order_not_ready_for_pickup")
     return PickupQuote(
         order_code=order.order_code,
-        fee_vnd=calculate_fee(order),
+        fee_vnd=max(0, calculate_fee(order) - order.base_fee_vnd),
         stored_at=order.stored_at,
         status=order.status,
     )
@@ -240,9 +348,16 @@ async def create_payment(
         OrderStatus.PAYMENT_PENDING.value,
     }:
         raise HTTPException(status_code=409, detail="payment_not_allowed")
+    surcharge = max(0, calculate_fee(order) - order.base_fee_vnd)
+    if surcharge == 0:
+        raise HTTPException(status_code=409, detail="no_payment_required")
     try:
         payment, provider = await create_or_get_payment(
-            session, _gateway(request), order, actor_id=user.id
+            session,
+            _gateway(request),
+            order,
+            actor_id=user.id,
+            amount_vnd=surcharge,
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail="payment_provider_error") from exc
@@ -267,7 +382,12 @@ async def pickup(
 ) -> dict[str, str]:
     order = await _load_order(session, order_code)
     _ensure_access(user, order)
-    if order.status != OrderStatus.PAID.value:
+    if order.status not in {OrderStatus.STORED.value, OrderStatus.PAID.value}:
+        raise HTTPException(status_code=409, detail="payment_required")
+    if (
+        order.status == OrderStatus.STORED.value
+        and calculate_fee(order) - order.base_fee_vnd > 0
+    ):
         raise HTTPException(status_code=409, detail="payment_required")
     if order.pickup_otp_attempts >= 5:
         raise HTTPException(status_code=423, detail="otp_locked")
@@ -316,6 +436,7 @@ async def mock_confirm_payment(
     )
     if payment is None:
         raise HTTPException(status_code=404, detail="payment_not_found")
+    is_deposit_payment = order.stored_at is None
     changed = await mark_payment_paid(
         session, payment, order, reference=f"MOCK-{payment.payos_order_code}"
     )
@@ -325,12 +446,22 @@ async def mock_confirm_payment(
         if compartment
         else None
     )
-    if station is not None:
+    if station is not None and compartment is not None:
         try:
-            _mqtt(request).show_ui(
-                station.device_id,
-                {"screen": "enter_otp", "order_code": order.order_code},
-            )
+            payload: dict[str, object]
+            if is_deposit_payment:
+                payload = {
+                    "screen": "result",
+                    "otp": derive_numeric_code(order.order_code, "pickup", length=8),
+                    "box": compartment.number,
+                }
+            else:
+                payload = {
+                    "screen": "door_guide",
+                    "mode": "pickup",
+                    "box": compartment.number,
+                }
+            _mqtt(request).show_ui(station.device_id, payload)
         except RuntimeError:
             pass
     return {"success": True, "changed": changed}

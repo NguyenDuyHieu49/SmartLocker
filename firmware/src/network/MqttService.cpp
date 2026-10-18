@@ -7,13 +7,15 @@
 
 MqttService::MqttService(NetworkManager& network, StorageManager& storage,
                          PcaServoDriver& servo, LimitSwitchDriver& switches,
-                         DisplayService& display, KeypadService& keypad)
+                         DisplayService& display, KeypadService& keypad,
+                         RtcDriver& rtc)
     : network_(network),
       storage_(storage),
       servo_(servo),
       switches_(switches),
       display_(display),
       keypad_(keypad),
+      rtc_(rtc),
       client_(SystemConfig::MQTT_BUFFER_SIZE) {}
 
 void MqttService::begin() {
@@ -57,7 +59,6 @@ void MqttService::connect() {
   if (!connected) return;
 
   client_.subscribe(topic("cmd/unlock"), 1);
-  client_.subscribe(topic("cmd/set_box"), 1);
   client_.subscribe(topic("cmd/reboot"), 1);
   client_.subscribe(topic("cmd/request_status"), 0);
   client_.subscribe(topic("cmd/ui"), 1);
@@ -92,8 +93,6 @@ bool MqttService::isConnected() { return client_.connected(); }
 void MqttService::onMessage(String& incomingTopic, String& payload) {
   if (incomingTopic == topic("cmd/unlock")) {
     handleUnlock(payload);
-  } else if (incomingTopic == topic("cmd/set_box")) {
-    handleSetBox(payload);
   } else if (incomingTopic == topic("cmd/reboot")) {
     handleReboot(payload);
   } else if (incomingTopic == topic("cmd/request_status")) {
@@ -108,14 +107,35 @@ void MqttService::handleUi(const String& payload) {
   if (deserializeJson(document, payload) != DeserializationError::Ok) return;
   const String screen = document["screen"] | "message";
   const String orderCode = document["order_code"] | "";
-  if (screen == "idle") {
-    keypad_.reset();
-  } else if (screen == "enter_otp") {
-    keypad_.startPickupOtp(orderCode);
+  const String mode = document["mode"] | "";
+  const int8_t box = document["box"] | -1;
+  if (screen == "idle" || screen == "main_menu") {
+    keypad_.showScene(screen);
+  } else if (screen == "box_select" || screen == "enter_phone" ||
+             screen == "enter_otp") {
+    keypad_.showScene(screen);
   } else if (screen == "payment") {
     const uint32_t amount = document["amount_vnd"] | 0;
     const String qrCode = document["qr_code"] | "";
     display_.showPayment(orderCode, amount, qrCode);
+    keypad_.showScene(screen);
+  } else if (screen == "door_guide") {
+    display_.showDoorGuide(mode, static_cast<uint8_t>(box));
+    keypad_.showScene(screen, mode, box);
+  } else if (screen == "result") {
+    const String otp = document["otp"] | "";
+    display_.showResult(otp, static_cast<uint8_t>(box));
+    keypad_.showScene(screen, "deposit", box);
+  } else if (screen == "overdue") {
+    display_.showOverdue(static_cast<uint8_t>(box),
+                         document["overdue_days"] | 0,
+                         document["daily_rate"] | 0,
+                         document["amount_vnd"] | 0);
+    keypad_.showScene(screen);
+  } else if (screen == "loading") {
+    const String loadingMode = document["loading_mode"] | "";
+    display_.showLoading(loadingMode);
+    keypad_.showScene(screen);
   } else {
     const String title = document["title"] | "THONG BAO";
     const String message = document["message"] | "";
@@ -152,27 +172,6 @@ void MqttService::handleUnlock(const String& payload) {
                       success ? nullptr : "servo_fault");
 }
 
-void MqttService::handleSetBox(const String& payload) {
-  JsonDocument document;
-  if (deserializeJson(document, payload) != DeserializationError::Ok) return;
-
-  const int boxValue = document["box"] | -1;
-  const String requestId = document["request_id"] | "";
-  if (boxValue < 0 || boxValue >= SystemConfig::TOTAL_BOXES ||
-      requestId.isEmpty() || !document["occupied"].is<bool>()) {
-    publishSetBoxResult(static_cast<uint8_t>(max(boxValue, 0)), requestId, false);
-    return;
-  }
-
-  const uint8_t box = static_cast<uint8_t>(boxValue);
-  if (!wasRequestProcessed(requestId)) {
-    storage_.setOccupied(box, document["occupied"].as<bool>());
-    rememberRequest(requestId);
-  }
-  publishSetBoxResult(box, requestId, true);
-  publishBoxesStatus();
-}
-
 void MqttService::handleReboot(const String& payload) {
   JsonDocument document;
   if (deserializeJson(document, payload) != DeserializationError::Ok) return;
@@ -206,17 +205,6 @@ void MqttService::publishUnlockResult(uint8_t box, const String& requestId,
   client_.publish(topic("evt/unlock_result"), payload, false, 1);
 }
 
-void MqttService::publishSetBoxResult(uint8_t box, const String& requestId,
-                                      bool success) {
-  JsonDocument document;
-  document["box"] = box;
-  document["request_id"] = requestId;
-  document["success"] = success;
-  String payload;
-  serializeJson(document, payload);
-  client_.publish(topic("evt/set_box_result"), payload, false, 1);
-}
-
 void MqttService::publishDoorEvent(uint8_t box, bool doorClosed) {
   if (!client_.connected()) return;
   JsonDocument document;
@@ -229,25 +217,34 @@ void MqttService::publishDoorEvent(uint8_t box, bool doorClosed) {
   publishBoxesStatus();
 }
 
-void MqttService::publishAccessRequest(const String& action,
-                                       const String& value,
-                                       const String& orderCode) {
+void MqttService::publishKeypadEvent(const String& action, const String& value,
+                                     const String& extra) {
   if (!client_.connected()) {
     display_.showMessage("MAT KET NOI", "Thu lai khi co mang", ST77XX_RED);
     return;
   }
   JsonDocument document;
   document["action"] = action;
-  document["order_code"] = orderCode;
-  if (action == "deposit") {
-    document["code"] = value;
-  } else if (action == "pickup_otp") {
-    document["otp"] = value;
+  if (action == "deposit_confirmed" || action == "pickup_confirmed") {
+    publishConfirmFinish(action, static_cast<uint8_t>(value.toInt()));
+    return;
   }
+  document["value"] = value;
+  if (!extra.isEmpty()) document["extra"] = extra;
   document["timestamp"] = timestamp();
   String payload;
   serializeJson(document, payload);
-  client_.publish(topic("evt/access_request"), payload, false, 1);
+  client_.publish(topic("evt/keypad"), payload, false, 1);
+}
+
+void MqttService::publishConfirmFinish(const String& action, uint8_t box) {
+  JsonDocument document;
+  document["action"] = action;
+  document["box"] = box;
+  document["timestamp"] = timestamp();
+  String payload;
+  serializeJson(document, payload);
+  client_.publish(topic("evt/confirm_finish"), payload, false, 1);
 }
 
 void MqttService::publishBoxesStatus() {
@@ -256,10 +253,11 @@ void MqttService::publishBoxesStatus() {
   document["device_id"] = NetworkConfig::DEVICE_ID;
   document["timestamp"] = timestamp();
   JsonArray boxes = document["boxes"].to<JsonArray>();
+  static const char* sizes[] = {"S", "S", "M", "S", "TECH"};
   for (uint8_t box = 0; box < SystemConfig::TOTAL_BOXES; ++box) {
     JsonObject item = boxes.add<JsonObject>();
     item["box"] = box;
-    item["occupied"] = storage_.getOccupied(box);
+    item["size"] = sizes[box];
     item["door_closed"] = switches_.isDoorClosed(box);
   }
   String payload;
@@ -295,8 +293,10 @@ bool MqttService::wasRequestProcessed(const String& requestId) const {
   return false;
 }
 
-uint32_t MqttService::timestamp() const {
+uint32_t MqttService::timestamp() {
   const time_t now = time(nullptr);
-  return now > 1700000000 ? static_cast<uint32_t>(now) : 0;
+  if (now > 1700000000) return static_cast<uint32_t>(now);
+  const uint32_t rtcEpoch = rtc_.epoch();
+  return rtcEpoch > 1700000000 ? rtcEpoch : millis() / 1000UL;
 }
 
