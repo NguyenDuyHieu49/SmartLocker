@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import QrcodeVue from 'qrcode.vue'
-import type { AuditLog, AuthResponse, LockerStatus, Order, Payment, Role } from '~/types'
+import type { AdminDashboard, AuditLog, AuthResponse, LockerBox, LockerStatus, Order, Payment, Role } from '~/types'
 
 const { api, hydrate, logout, setAuth, token, user } = useApi()
 const authMode = ref<'login' | 'register'>('login')
@@ -9,6 +9,7 @@ const orderForm = reactive({ recipient_phone: '', recipient_name: '', station_de
 const orders = ref<Order[]>([])
 const locker = ref<LockerStatus | null>(null)
 const audits = ref<AuditLog[]>([])
+const adminDashboard = ref<AdminDashboard | null>(null)
 const payment = ref<Payment | null>(null)
 const otpByOrder = reactive<Record<string, string>>({})
 const depositOpenedForSimulation = reactive<Record<string, boolean>>({})
@@ -30,7 +31,16 @@ const money = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'curren
 const date = (value: string | null) => value ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '—'
 
 function translateStatus(value: string) {
-  return ({ RESERVED: 'Chờ gửi hàng', DEPOSIT_AUTHORIZED: 'Đang mở tủ', DEPOSIT_OPEN: 'Tủ đang mở', STORED: 'Đang lưu tại tủ', PAYMENT_PENDING: 'Chờ thanh toán', PAID: 'Đã thanh toán', PICKUP_AUTHORIZED: 'Đang mở tủ', PICKUP_OPEN: 'Tủ đang mở', COMPLETED: 'Đã nhận hàng', CANCELLED: 'Đã hủy', MANUAL_REVIEW: 'Cần xử lý', AVAILABLE: 'Trống', OCCUPIED: 'Đang dùng', OUT_OF_SERVICE: 'Bảo trì' } as Record<string, string>)[value] || value
+  return ({ RESERVED: 'Đã giữ · chờ gửi', DEPOSIT_AUTHORIZED: 'Đã cấp quyền gửi', DEPOSIT_OPEN: 'Đang đặt hàng', STORED: 'Đang lưu hàng', PAYMENT_PENDING: 'Chờ thanh toán', PAID: 'Đã thanh toán · chờ thao tác', PICKUP_AUTHORIZED: 'Đã cấp quyền nhận', PICKUP_OPEN: 'Đang lấy hàng', COMPLETED: 'Đã nhận hàng', CANCELLED: 'Đã hủy', MANUAL_REVIEW: 'Cần xử lý', AVAILABLE: 'Sẵn sàng', OCCUPIED: 'Đang có hàng', OUT_OF_SERVICE: 'Bảo trì', TECH: 'Ngăn kỹ thuật', DOOR_OPEN: 'Cửa mở bất thường', PHYSICAL_UNKNOWN: 'Chưa có dữ liệu cửa' } as Record<string, string>)[value] || value
+}
+
+function boxTone(box: LockerBox) {
+  if (box.operational_status === 'TECH') return 'tech'
+  if (['DOOR_OPEN', 'MANUAL_REVIEW', 'OUT_OF_SERVICE'].includes(box.operational_status)) return 'attention'
+  if (['STORED', 'PAID', 'PICKUP_AUTHORIZED', 'PICKUP_OPEN', 'OCCUPIED'].includes(box.operational_status)) return 'occupied'
+  if (['RESERVED', 'PAYMENT_PENDING', 'DEPOSIT_AUTHORIZED', 'DEPOSIT_OPEN'].includes(box.operational_status)) return 'reserved'
+  if (box.operational_status === 'PHYSICAL_UNKNOWN') return 'unknown'
+  return 'available'
 }
 
 function flash(message: string, isError = false) {
@@ -81,6 +91,7 @@ async function refresh(quiet = false) {
     if (user.value?.role === 'ADMIN') {
       tasks.push(api<LockerStatus>('/api/v1/lockers/SB-001/status').then((data) => { locker.value = data }))
       tasks.push(api<AuditLog[]>('/api/v1/admin/audit-logs').then((data) => { audits.value = data }))
+      tasks.push(api<AdminDashboard>('/api/v1/admin/dashboard').then((data) => { adminDashboard.value = data }))
     }
     await Promise.all(tasks)
   } catch (err) { if (!quiet) flash(apiError(err), true) }
@@ -135,7 +146,7 @@ async function manualUnlock() {
   })
 }
 
-function signOut() { logout(); orders.value = []; locker.value = null; audits.value = [] }
+function signOut() { logout(); orders.value = []; locker.value = null; audits.value = []; adminDashboard.value = null }
 onMounted(async () => { hydrate(); await refresh(true); pollTimer = setInterval(() => refresh(true), 5000) })
 onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
 </script>
@@ -189,9 +200,42 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
         <article v-for="order in orders" :key="order.id" class="customer-order"><div class="package-visual"><span class="locker-number">{{ String(order.box + 1).padStart(2, '0') }}</span><i class="locker-line" /><b>{{ order.station_device_id }}</b><small>NGĂN TỦ CỦA BẠN</small></div><div class="package-info"><div class="order-top"><div><p class="eyebrow">KIỆN HÀNG #{{ order.order_code }}</p><h2>{{ translateStatus(order.status) }}</h2></div><span class="pill" :data-status="order.status">{{ order.status }}</span></div><div class="facts"><p><small>NGƯỜI NHẬN</small>{{ order.recipient_name }}</p><p><small>GỬI VÀO TỦ</small>{{ date(order.stored_at) }}</p><p><small>PHỤ PHÍ QUÁ HẠN</small><b>{{ money(order.fee_vnd) }}</b></p></div><button v-if="order.status === 'STORED' && order.fee_vnd > 0" class="primary" :disabled="busy === `payment-${order.id}`" @click="createPayment(order)">Thanh toán phụ phí <span>→</span></button><div v-if="order.pickup_otp && ((order.status === 'STORED' && order.fee_vnd === 0) || order.status === 'PAID')" class="otp-row"><label>OTP nhận hàng<input v-model="otpByOrder[order.id]" maxlength="8" inputmode="numeric" :placeholder="`OTP: ${order.pickup_otp}`"></label><button class="primary" :disabled="busy === `pickup-${order.id}`" @click="pickup(order)">Mở tủ →</button></div><p v-if="order.status === 'COMPLETED'" class="complete-note">✓ Kiện hàng đã được nhận lúc {{ date(order.completed_at) }}</p></div></article>
       </section>
 
-      <section v-if="user.role === 'ADMIN'" class="workspace admin-grid"><div class="panel station-panel"><div class="panel-head"><div><p class="eyebrow">TRẠNG THÁI TỦ</p><h2>5 ngăn tại SB-001</h2></div><span class="online-badge" :class="{ offline: !locker?.online }"><i /> {{ locker?.online ? 'Đang kết nối' : 'Mất kết nối' }}</span></div><div class="locker-map"><div v-for="box in locker?.boxes" :key="box.box" class="locker-cell" :class="box.business_status.toLowerCase()"><b>{{ String(box.box + 1).padStart(2, '0') }}</b><span>{{ translateStatus(box.business_status) }}</span><small>{{ box.door_closed === false ? 'Cửa đang mở' : 'Cửa đóng' }}</small></div></div></div>
+      <section v-if="user.role === 'ADMIN'" class="workspace admin-grid">
+        <div class="admin-metrics">
+          <article><small>DOANH THU HÔM NAY</small><b>{{ money(adminDashboard?.revenue.today_vnd || 0) }}</b><span>Theo giờ Việt Nam</span></article>
+          <article><small>THÁNG NÀY</small><b>{{ money(adminDashboard?.revenue.month_vnd || 0) }}</b><span>Từ ngày 01</span></article>
+          <article><small>TỔNG DOANH THU</small><b>{{ money(adminDashboard?.revenue.total_vnd || 0) }}</b><span>Giao dịch đã xác nhận</span></article>
+          <article><small>GIAO DỊCH THÀNH CÔNG</small><b>{{ adminDashboard?.revenue.paid_transactions || 0 }}</b><span>Lượt thanh toán</span></article>
+        </div>
+
+        <div class="panel station-panel">
+          <div class="panel-head"><div><p class="eyebrow">TRẠNG THÁI TỦ</p><h2>5 ngăn tại SB-001</h2></div><span class="online-badge" :class="{ offline: !locker?.online }"><i /> {{ locker?.online ? 'Đang kết nối' : 'Mất kết nối' }}</span></div>
+          <div class="locker-map">
+            <article v-for="box in locker?.boxes" :key="box.box" class="locker-cell" :class="boxTone(box)">
+              <div class="locker-cell-head"><b>{{ String(box.box + 1).padStart(2, '0') }}</b><em>{{ box.size }}</em></div>
+              <span>{{ translateStatus(box.operational_status) }}</span>
+              <small>{{ box.door_closed === null ? 'Chưa có dữ liệu cửa' : box.door_closed ? 'Cửa đã đóng' : 'Cửa đang mở' }}</small>
+              <small v-if="box.order_code" class="locker-order">Đơn #{{ box.order_code }}</small>
+            </article>
+          </div>
+          <div class="status-legend"><span><i class="available" /> Sẵn sàng</span><span><i class="reserved" /> Chờ gửi/thanh toán</span><span><i class="occupied" /> Có hàng</span><span><i class="attention" /> Cần kiểm tra</span><span><i class="tech" /> Kỹ thuật</span></div>
+        </div>
+
         <form class="panel" @submit.prevent="manualUnlock"><p class="eyebrow">MỞ THỦ CÔNG</p><h2>Chọn ngăn tủ</h2><p class="muted">Lệnh mở và lý do sẽ được lưu vào nhật ký.</p><label>Ngăn tủ<select v-model.number="manual.box"><option v-for="n in 5" :key="n" :value="n - 1">Ngăn {{ n }}</option></select></label><label>Lý do<textarea v-model="manual.reason" required minlength="5" rows="3" /></label><button class="danger full" :disabled="busy === 'manual'">Mở ngăn tủ</button></form>
-        <div class="panel audit-panel"><div class="panel-head"><div><p class="eyebrow">NHẬT KÝ HỆ THỐNG</p><h2>Hoạt động gần đây</h2></div></div><div class="audit-list"><div v-for="item in audits.slice(0, 20)" :key="item.id"><span class="audit-mark" /><p><b>{{ item.action.replaceAll('_', ' ') }}</b><small>{{ item.entity_type }} · {{ item.entity_id }}</small></p><time>{{ date(item.created_at) }}</time></div></div></div></section>
+
+        <div class="panel revenue-panel">
+          <div class="panel-head"><div><p class="eyebrow">BẢNG DOANH THU</p><h2>7 ngày gần nhất</h2></div><span class="count">Đã thu</span></div>
+          <div class="table-scroll"><table><thead><tr><th>Ngày</th><th>Giao dịch</th><th>Doanh thu</th></tr></thead><tbody><tr v-for="row in adminDashboard?.daily_revenue" :key="row.date"><td>{{ new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${row.date}T00:00:00`)) }}</td><td>{{ row.transaction_count }}</td><td><b>{{ money(row.amount_vnd) }}</b></td></tr></tbody></table></div>
+        </div>
+
+        <div class="panel transaction-panel">
+          <div class="panel-head"><div><p class="eyebrow">THANH TOÁN</p><h2>Giao dịch gần nhất</h2></div></div>
+          <div v-if="!adminDashboard?.recent_transactions.length" class="empty">Chưa có giao dịch thành công.</div>
+          <div v-else class="transaction-list"><div v-for="item in adminDashboard.recent_transactions" :key="item.id"><p><b>#{{ item.order_code }}</b><small>{{ item.provider.toUpperCase() }} · {{ date(item.paid_at) }}</small></p><strong>{{ money(item.amount_vnd) }}</strong></div></div>
+        </div>
+
+        <div class="panel audit-panel"><div class="panel-head"><div><p class="eyebrow">NHẬT KÝ HỆ THỐNG</p><h2>Hoạt động gần đây</h2></div></div><div class="audit-list"><div v-for="item in audits.slice(0, 20)" :key="item.id"><span class="audit-mark" /><p><b>{{ item.action.replaceAll('_', ' ') }}</b><small>{{ item.entity_type }} · {{ item.entity_id }}</small></p><time>{{ date(item.created_at) }}</time></div></div></div>
+      </section>
     </template>
 
     <footer><span>SMARTBOX / PHASE 1</span><p>ESP32-S3 · 5 ngăn tủ · payOS</p><a href="mailto:support@smartbox.id.vn">support@smartbox.id.vn</a></footer>

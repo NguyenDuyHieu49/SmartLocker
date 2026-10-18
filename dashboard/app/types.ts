@@ -41,9 +41,14 @@ export interface Payment {
 
 export interface LockerBox {
   box: number
+  size: 'S' | 'M' | 'TECH'
   business_status: string
+  operational_status: string
   occupied: boolean | null
   door_closed: boolean | null
+  order_code: string | null
+  order_status: string | null
+  stored_at: string | null
 }
 
 export interface LockerStatus {
@@ -59,4 +64,31 @@ export interface AuditLog {
   entity_id: string
   detail: Record<string, unknown>
   created_at: string
+}
+
+export interface RevenueSummary {
+  today_vnd: number
+  month_vnd: number
+  total_vnd: number
+  paid_transactions: number
+}
+
+export interface DailyRevenue {
+  date: string
+  amount_vnd: number
+  transaction_count: number
+}
+
+export interface RevenueTransaction {
+  id: string
+  order_code: string
+  provider: string
+  amount_vnd: number
+  paid_at: string
+}
+
+export interface AdminDashboard {
+  revenue: RevenueSummary
+  daily_revenue: DailyRevenue[]
+  recent_transactions: RevenueTransaction[]
 }

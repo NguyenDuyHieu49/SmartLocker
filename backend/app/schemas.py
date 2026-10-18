@@ -80,12 +80,44 @@ class ManualUnlockRequest(BaseModel):
 
 class LockerBoxView(BaseModel):
     box: int
+    size: str
     business_status: str
+    operational_status: str
     occupied: bool | None = None
     door_closed: bool | None = None
+    order_code: str | None = None
+    order_status: str | None = None
+    stored_at: datetime | None = None
 
 
 class LockerStatusView(BaseModel):
     device_id: str
     online: bool
     boxes: list[LockerBoxView]
+
+
+class RevenueSummary(BaseModel):
+    today_vnd: int
+    month_vnd: int
+    total_vnd: int
+    paid_transactions: int
+
+
+class DailyRevenue(BaseModel):
+    date: str
+    amount_vnd: int
+    transaction_count: int
+
+
+class RevenueTransaction(BaseModel):
+    id: str
+    order_code: str
+    provider: str
+    amount_vnd: int
+    paid_at: datetime
+
+
+class AdminDashboardView(BaseModel):
+    revenue: RevenueSummary
+    daily_revenue: list[DailyRevenue]
+    recent_transactions: list[RevenueTransaction]
