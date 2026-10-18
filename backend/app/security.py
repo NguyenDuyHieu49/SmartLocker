@@ -14,8 +14,15 @@ password_hash = PasswordHash.recommended()
 
 def normalize_phone(phone: str) -> str:
     digits = "".join(character for character in phone if character.isdigit())
-    if digits.startswith("84") and len(digits) >= 11:
-        digits = "0" + digits[2:]
+    if digits.startswith("84"):
+        national_number = digits[2:]
+        # Accept both +849... and the commonly entered +8409... form while
+        # storing a single Vietnamese national representation.
+        digits = (
+            national_number
+            if national_number.startswith("0")
+            else f"0{national_number}"
+        )
     if not digits.startswith("0") or not 9 <= len(digits) <= 11:
         raise ValueError("invalid_phone")
     return digits

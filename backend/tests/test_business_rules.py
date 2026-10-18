@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from app.core.config import Settings
 from app.models import Order
@@ -44,7 +45,10 @@ def test_fee_rounds_each_started_billing_unit_up() -> None:
 
 
 def test_phone_normalization_and_otp_digest() -> None:
-    assert normalize_phone("+84 901 234 567") == "0901234567"
+    expected = "0912345678"
+    assert normalize_phone("0912 345 678") == expected
+    assert normalize_phone("+84 912 345 678") == expected
+    assert normalize_phone("+84 0912 345 678") == expected
     digest = code_digest("483920")
     assert verify_code("483920", digest)
     assert not verify_code("483921", digest)
@@ -60,6 +64,26 @@ def test_pickup_otp_is_stable_but_scoped_to_order() -> None:
 def test_invalid_phone_is_rejected() -> None:
     with pytest.raises(ValueError, match="invalid_phone"):
         normalize_phone("123")
+
+
+def test_production_rejects_ephemeral_sqlite_database() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="DATABASE_URL must use a persistent production database",
+    ):
+        Settings(
+            environment="production",
+            database_url="sqlite+aiosqlite:///./smartlocker.db",
+            jwt_secret="j" * 32,
+            otp_pepper="o" * 32,
+            bootstrap_admin_password="ProductionAdminPassword",
+            demo_mode=False,
+            payment_provider="payos",
+            payos_client_id="client",
+            payos_api_key="api-key",
+            payos_checksum_key="checksum-key",
+            mqtt_tls=True,
+        )
 
 
 def test_mock_payment_contains_dashboard_return_url() -> None:
@@ -83,8 +107,7 @@ def test_railway_postgres_url_is_converted_for_asyncpg() -> None:
 def test_neon_postgres_url_is_converted_for_asyncpg() -> None:
     settings = Settings(
         database_url=(
-            "postgresql://user:pass@host/db"
-            "?sslmode=require&channel_binding=require"
+            "postgresql://user:pass@host/db?sslmode=require&channel_binding=require"
         )
     )
     assert settings.async_database_url == (
@@ -116,9 +139,7 @@ def test_payos_webhook_uses_public_api_url(
     )
     gateway.confirm_webhook()
 
-    assert captured["url"] == (
-        "https://api.smartbox.id.vn/api/v1/webhooks/payos"
-    )
+    assert captured["url"] == ("https://api.smartbox.id.vn/api/v1/webhooks/payos")
 
 
 def momo_gateway() -> MomoSandboxGateway:

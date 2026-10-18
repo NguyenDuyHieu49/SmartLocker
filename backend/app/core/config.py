@@ -73,6 +73,9 @@ class Settings(BaseSettings):
             errors.append("BOOTSTRAP_ADMIN_PASSWORD must be changed")
         if self.demo_mode:
             errors.append("DEMO_MODE must be false")
+        database_url = self.database_url.strip().lower()
+        if not database_url or database_url.startswith("sqlite"):
+            errors.append("DATABASE_URL must use a persistent production database")
         provider = self.effective_payment_provider
         if provider == "mock":
             errors.append("PAYMENT_PROVIDER must not be mock in production")

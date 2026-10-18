@@ -46,7 +46,11 @@ async def login(body: LoginRequest, session: SessionDep) -> AuthResponse:
     except ValueError as exc:
         raise HTTPException(status_code=401, detail="invalid_credentials") from exc
     user = await session.scalar(select(User).where(User.phone == phone))
-    if user is None or not verify_password(body.password, user.password_hash):
+    if (
+        user is None
+        or not user.is_active
+        or not verify_password(body.password, user.password_hash)
+    ):
         raise HTTPException(status_code=401, detail="invalid_credentials")
     return AuthResponse(
         access_token=create_access_token(user.id), user=UserView.model_validate(user)

@@ -44,17 +44,33 @@ function apiError(err: unknown) {
   return ({ invalid_credentials: 'Số điện thoại hoặc mật khẩu không đúng.', phone_already_registered: 'Số điện thoại đã đăng ký.', invalid_otp: 'Mã OTP không đúng.', payment_required: 'Vui lòng thanh toán trước.', no_available_compartment: 'Hiện không còn ngăn tủ trống.' } as Record<string, string>)[detail] || detail
 }
 
+function apiErrorDetail(err: unknown) {
+  return (err as { data?: { detail?: string } }).data?.detail
+}
+
 async function run(key: string, action: () => Promise<void>) {
   busy.value = key; error.value = ''
   try { await action() } catch (err) { flash(apiError(err), true) } finally { busy.value = '' }
 }
 
 async function submitAuth() {
-  await run('auth', async () => {
-    const path = authMode.value === 'login' ? '/api/v1/auth/login' : '/api/v1/auth/register'
-    const body = authMode.value === 'login' ? { phone: authForm.phone, password: authForm.password } : authForm
+  const mode = authMode.value
+  busy.value = 'auth'; error.value = ''
+  try {
+    const path = mode === 'login' ? '/api/v1/auth/login' : '/api/v1/auth/register'
+    const body = mode === 'login' ? { phone: authForm.phone, password: authForm.password } : authForm
     setAuth(await api<AuthResponse>(path, { method: 'POST', body })); await refresh()
-  })
+  } catch (err) {
+    if (mode === 'register' && apiErrorDetail(err) === 'phone_already_registered') {
+      authMode.value = 'login'
+      authForm.password = ''
+      flash('Tài khoản đã tồn tại. Hãy đăng nhập bằng mật khẩu đã tạo trước đó.', true)
+    } else {
+      flash(apiError(err), true)
+    }
+  } finally {
+    busy.value = ''
+  }
 }
 
 async function refresh(quiet = false) {
