@@ -1,9 +1,17 @@
-from sqlalchemy import select, text
+from sqlalchemy import inspect, select, text
+from sqlalchemy.engine import Connection
 
 from app.core.config import Settings
 from app.db import SessionFactory, engine
 from app.models import Base, Compartment, LockerStation, User, UserRole
 from app.security import hash_password, normalize_phone, verify_password
+
+
+def _get_table_column_names(connection: Connection, table_name: str) -> set[str]:
+    return {
+        str(column["name"])
+        for column in inspect(connection).get_columns(table_name)
+    }
 
 
 async def initialize_database(settings: Settings) -> None:
@@ -17,8 +25,9 @@ async def initialize_database(settings: Settings) -> None:
             ("overdue_price_per_day", "INTEGER DEFAULT 2000"),
             ("max_overdue_days", "INTEGER DEFAULT 3"),
         ]
-        res = await connection.execute(text("PRAGMA table_info(compartments)"))
-        existing_cols = {row[1] for row in res.fetchall()}
+        existing_cols = await connection.run_sync(
+            _get_table_column_names, "compartments"
+        )
         for col_name, col_def in columns_to_add:
             if col_name not in existing_cols:
                 await connection.execute(

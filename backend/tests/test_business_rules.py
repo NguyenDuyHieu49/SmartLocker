@@ -6,13 +6,33 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine
 
+from app.bootstrap import _get_table_column_names
 from app.core.config import Settings
 from app.models import Order
 from app.payments import MockPaymentGateway, MomoSandboxGateway, PayOSGateway
 from app.security import code_digest, derive_numeric_code, normalize_phone, verify_code
 from app.services.common import calculate_fee
 from app.services.pricing import daily_rate_for_box, pricing_snapshot_for_box
+
+
+def test_table_column_inspection_is_database_agnostic() -> None:
+    engine = create_engine("sqlite://")
+    metadata = MetaData()
+    Table(
+        "compartments",
+        metadata,
+        Column("id", String, primary_key=True),
+        Column("number", Integer, nullable=False),
+    )
+    metadata.create_all(engine)
+
+    with engine.connect() as connection:
+        assert _get_table_column_names(connection, "compartments") == {
+            "id",
+            "number",
+        }
 
 
 def make_order(stored_at: datetime | None) -> Order:
