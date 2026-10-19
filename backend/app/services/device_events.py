@@ -313,10 +313,10 @@ class DeviceEventProcessor:
         self.mqtt.show_ui(
             device_id,
             {
-                "screen": "door_guide",
-                "mode": "deposit",
+                "screen": "result",
                 "box": compartment.number,
                 "order_code": order.order_code,
+                "otp": pickup_otp,
                 "payer": "recipient",
             },
         )

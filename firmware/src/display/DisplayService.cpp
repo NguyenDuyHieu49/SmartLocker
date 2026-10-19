@@ -136,11 +136,13 @@ void DisplayService::showDoorGuide(const String& mode, uint8_t box) {
 }
 
 void DisplayService::showResult(const String& otp, uint8_t box) {
-  header("THANH TOAN XONG", ST77XX_GREEN);
-  centeredText(String("Ngan ") + String(box + 1), 55, 2, ST77XX_WHITE);
-  centeredText("MA NHAN HANG", 94, 1, ST77XX_YELLOW);
-  centeredText(otp, 120, 3, ST77XX_WHITE);
-  centeredText("Luu ma - Tu dang mo", 190, 1, ST77XX_GREEN);
+  header("LUU MA NHAN HANG", ST77XX_GREEN);
+  centeredText(String("NGAN ") + String(box + 1), 66, 2, ST77XX_WHITE);
+  centeredText("MA OTP NHAN HANG", 106, 1, ST77XX_YELLOW);
+  centeredText(otp, 142, 3, ST77XX_WHITE);
+  centeredText("Luu ma cho nguoi nhan", 184, 1, ST77XX_YELLOW);
+  centeredText(String("[A] Mo ngan ") + String(box + 1), 218, 1,
+               ST77XX_GREEN);
 }
 
 void DisplayService::showOpening(const String& mode, uint8_t box) {
