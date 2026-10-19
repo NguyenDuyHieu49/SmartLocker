@@ -30,7 +30,6 @@ async def create_or_get_payment(
         select(Payment)
         .where(
             Payment.order_id == order.id,
-            Payment.amount_vnd == amount,
             Payment.status == PaymentStatus.PENDING.value,
         )
         .order_by(Payment.created_at.desc())
@@ -127,7 +126,6 @@ async def cancel_order_payment(
     if order.status in (OrderStatus.RESERVED.value, OrderStatus.PAYMENT_PENDING.value):
         if order.stored_at is None:
             order.status = OrderStatus.CANCELLED.value
-            from app.models import Compartment, CompartmentStatus
             compartment = await session.get(Compartment, order.compartment_id)
             if compartment and compartment.status == CompartmentStatus.RESERVED.value:
                 compartment.status = CompartmentStatus.AVAILABLE.value
@@ -160,7 +158,6 @@ async def cancel_expired_pending_payments(
             )
         ).all()
     )
-    from app.models import Compartment, CompartmentStatus
     processed_orders: set[str] = set()
     count = 0
 

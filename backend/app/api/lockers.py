@@ -22,7 +22,6 @@ from app.schemas import (
     UpdateCompartmentConfigRequest,
 )
 from app.services.commands import publish_unlock
-from app.services.pricing import daily_rate_for_box
 
 router = APIRouter(prefix="/api/v1/lockers", tags=["lockers"])
 AdminUser = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
@@ -213,7 +212,7 @@ async def update_compartment_config(
     }
     try:
         _mqtt(request).sync_config(device_id, sync_payload)
-    except Exception:
+    except RuntimeError:
         pass
 
     return CompartmentConfigView.model_validate(compartment)

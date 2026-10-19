@@ -1,5 +1,6 @@
 import json
-from datetime import UTC, datetime, time, timedelta, timezone
+import secrets
+from datetime import UTC, datetime, time, timedelta, timezone, tzinfo
 from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -9,6 +10,7 @@ from sqlalchemy import func, select
 from app.dependencies import SessionDep, require_roles
 from app.models import (
     AuditLog,
+    CommandPurpose,
     Compartment,
     CompartmentStatus,
     LockerStation,
@@ -26,10 +28,12 @@ from app.schemas import (
     RevenueSummary,
     RevenueTransaction,
 )
+from app.services.commands import publish_unlock
 from app.services.common import add_audit, calculate_fee
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 AdminUser = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
+VIETNAM_TZ: tzinfo
 try:
     VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 except ZoneInfoNotFoundError:
@@ -187,11 +191,11 @@ async def resolve_overdue(
     if fee > 0:
         payment = Payment(
             order_id=order.id,
-            user_id=order.shipper_id or user.id,
+            payos_order_code=1_000_000_000 + secrets.randbelow(1_000_000_000),
             amount_vnd=fee,
             status=PaymentStatus.PAID.value,
             provider="admin_cash",
-            transaction_ref=f"OVERDUE-{order.order_code}",
+            reference=f"OVERDUE-{order.order_code}",
             paid_at=now,
         )
         session.add(payment)
@@ -215,8 +219,18 @@ async def resolve_overdue(
     await session.commit()
 
     try:
-        request.app.state.mqtt_service.unlock(station.device_id, compartment.number, purpose="admin")
-    except Exception:
+        await publish_unlock(
+            session,
+            request.app.state.mqtt,
+            device_id=station.device_id,
+            box=compartment.number,
+            purpose=CommandPurpose.ADMIN,
+            order_id=order.id,
+            actor_id=user.id,
+            reason="admin_resolve_overdue",
+        )
+    except RuntimeError:
+        # The cash settlement is still recorded if the physical locker is offline.
         pass
 
     return {

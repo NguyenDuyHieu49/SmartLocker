@@ -15,13 +15,12 @@ ESP32 xử lý keypad, TFT, servo và công tắc cửa qua MQTT.
 ## Luồng nghiệp vụ
 
 1. Tại tủ, shipper chọn cỡ S/M và nhập số điện thoại người nhận.
-2. Backend cấp một ngăn thuê phù hợp, tạo đơn, OTP 8 số và QR phí gửi.
-3. Webhook thanh toán hợp lệ tự động gửi lệnh mở đúng ngăn; người dùng không
-   cần nhấn thêm nút mở.
-4. Sau khi đặt hàng và đóng cửa, shipper nhấn `A`; backend mới chuyển đơn sang
+2. Backend cấp ngăn, tạo đơn và OTP 8 số; shipper không phải thanh toán.
+3. Shipper mở ngăn, đặt hàng và đóng cửa, sau đó nhấn `A`; backend chuyển đơn sang
    `STORED` và ngăn sang `OCCUPIED`.
-5. Người nhận nhập OTP. Nếu chưa quá hạn, hệ thống cho xác nhận mở; nếu quá
-   hạn, hệ thống yêu cầu thanh toán phụ phí rồi tự động mở sau webhook.
+4. Người nhận thanh toán toàn bộ phí lưu trữ trên web hoặc nhập OTP tại kiosk
+   để hiển thị QR thanh toán.
+5. Webhook hợp lệ tự động gửi lệnh mở đúng ngăn nhận hàng.
 6. Sau khi lấy hàng và đóng cửa, người nhận nhấn `A`; backend chuyển đơn sang
    `COMPLETED` và trả ngăn về `AVAILABLE`.
 
@@ -35,8 +34,8 @@ lý và không tự thay đổi trạng thái nghiệp vụ nếu thiếu `confi
 - Ngăn 4: 10.000đ cho mỗi chu kỳ 24 giờ bắt đầu.
 - Ngăn 5 là ngăn kỹ thuật và không được cho thuê.
 
-Ngày đầu được thanh toán khi gửi hàng. Khi vượt quá 24 giờ, hệ thống tính phụ
-phí theo từng chu kỳ 24 giờ bắt đầu tiếp theo. Giá được lưu vào đơn lúc tạo nên
+Người nhận thanh toán khi lấy hàng. Tổng tiền gồm ngày đầu và phí của từng
+chu kỳ 24 giờ bắt đầu tiếp theo. Giá được lưu vào đơn lúc tạo nên
 việc đổi bảng giá sau này không làm thay đổi các đơn đã tồn tại.
 
 ## Chạy local

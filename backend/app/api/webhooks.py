@@ -17,6 +17,7 @@ from app.models import (
 from app.mqtt.service import MqttService
 from app.payments import PaymentGateway
 from app.security import derive_numeric_code
+from app.services.commands import publish_unlock
 from app.services.common import add_audit
 from app.services.payment_service import mark_payment_paid
 
@@ -42,7 +43,7 @@ async def _process_payment_webhook(
         if isinstance(raw_json, dict) and "webhookUrl" in raw_json and "signature" not in raw_json:
             print("[PAYOS WEBHOOK] -> Nhận probe xác thực Webhook URL từ PayOS, phản hồi 200 OK", flush=True)
             return {"error": 0, "message": "Ok", "success": True, "data": None}
-    except Exception:
+    except (json.JSONDecodeError, UnicodeDecodeError):
         pass
 
     gateway = cast(PaymentGateway, request.app.state.payment_gateway)
@@ -59,7 +60,7 @@ async def _process_payment_webhook(
             if isinstance(raw_json, dict) and raw_json.get("data", {}).get("orderCode") == 123:
                 print("[PAYOS WEBHOOK] -> Dữ liệu mẫu test webhook (orderCode 123), trả về 200 OK cho PayOS", flush=True)
                 return {"error": 0, "message": "Ok", "success": True, "data": None}
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
             pass
         raise HTTPException(status_code=400, detail="invalid_webhook") from exc
 
@@ -105,7 +106,7 @@ async def _process_payment_webhook(
         )
     )
     await session.flush()
-    is_deposit_payment = order.stored_at is None
+    is_legacy_deposit_payment = order.stored_at is None
     newly_paid = await mark_payment_paid(
         session, payment, order, reference=verified.reference
     )
@@ -122,7 +123,12 @@ async def _process_payment_webhook(
     )
     if station is not None and compartment is not None:
         mqtt = cast(MqttService, request.app.state.mqtt)
-        if is_deposit_payment:
+        purpose = (
+            CommandPurpose.DEPOSIT
+            if is_legacy_deposit_payment
+            else CommandPurpose.PICKUP
+        )
+        if is_legacy_deposit_payment:
             try:
                 mqtt.show_ui(
                     station.device_id,
@@ -132,13 +138,14 @@ async def _process_payment_webhook(
                             order.order_code, "pickup", length=8
                         ),
                         "box": compartment.number,
+                        "auto_open": True,
                     },
                 )
             except RuntimeError:
                 pass
             print(
                 f"[PAYOS WEBHOOK] -> Đã gửi kết quả OTP về ESP32 (Ngăn #{compartment.number + 1}). "
-                f"Khách đọc xong hướng dẫn nhấn [A] thì ESP32 mới tự mở tủ vật lý.",
+                "Hệ thống đang tự động mở ngăn gửi hàng của giao dịch cũ.",
                 flush=True,
             )
         else:
@@ -149,15 +156,41 @@ async def _process_payment_webhook(
                         "screen": "door_guide",
                         "mode": "pickup",
                         "box": compartment.number,
+                        "auto_open": True,
                     },
                 )
             except RuntimeError:
                 pass
             print(
                 f"[PAYOS WEBHOOK] -> Đã chuyển sang màn hình hướng dẫn nhận đồ cho ESP32 (Ngăn #{compartment.number + 1}). "
-                f"Khách bấm [A] ở hướng dẫn cuối thì ESP32 mới mở tủ.",
+                "Hệ thống đang tự động mở ngăn sau khi người nhận thanh toán.",
                 flush=True,
             )
+        try:
+            await publish_unlock(
+                session,
+                mqtt,
+                device_id=station.device_id,
+                box=compartment.number,
+                purpose=purpose,
+                order_id=order.id,
+                actor_id=None,
+                reason="receiver_payment_confirmed_auto_unlock",
+            )
+        except RuntimeError as exc:
+            await add_audit(
+                session,
+                action="AUTO_UNLOCK_FAILED",
+                entity_type="order",
+                entity_id=order.id,
+                detail={
+                    "device_id": station.device_id,
+                    "box": compartment.number,
+                    "purpose": purpose.value,
+                    "error": str(exc),
+                },
+            )
+            await session.commit()
     return {"error": 0, "message": "Ok", "success": True, "duplicate": False, "data": None}
 
 

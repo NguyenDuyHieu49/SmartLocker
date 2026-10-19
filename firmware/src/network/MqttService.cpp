@@ -120,8 +120,14 @@ void MqttService::handleUi(const String& payload) {
     display_.showPayment(orderCode, amount, qrCode);
     keypad_.showScene(screen);
   } else if (screen == "door_guide") {
-    display_.showDoorGuide(mode, static_cast<uint8_t>(box));
-    keypad_.showScene(screen, mode, box);
+    const bool autoOpen = document["auto_open"] | false;
+    if (autoOpen) {
+      display_.showOpening(mode, static_cast<uint8_t>(box));
+      keypad_.showScene("opening", mode, box);
+    } else {
+      display_.showDoorGuide(mode, static_cast<uint8_t>(box));
+      keypad_.showScene(screen, mode, box);
+    }
   } else if (screen == "result") {
     const String otp = document["otp"] | "";
     const bool autoOpen = document["auto_open"] | false;

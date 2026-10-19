@@ -28,13 +28,11 @@ specification được ưu tiên.
 
 1. Shipper chọn Gửi hàng, chọn S/M và nhập số điện thoại 10 số trên keypad.
 2. ESP phát `evt/keypad` với action `deposit_phone`.
-3. Backend cấp box `0..3`, tạo đơn, OTP 8 số và payment QR phí cơ bản.
-4. Sau webhook thanh toán, backend gửi `cmd/ui` màn hình `result`, rồi gửi
-   `cmd/unlock` với purpose `DEPOSIT` để tự động mở đúng ngăn.
-5. ESP phát `evt/unlock_result` và các `evt/door`.
-6. Sau khi cửa đã đóng, shipper nhấn `A`; ESP phát `evt/confirm_finish` action
+3. Backend cấp box `0..3`, tạo đơn và OTP 8 số, không tạo thanh toán.
+4. Backend gửi `door_guide`; shipper nhấn `A` để mở ngăn gửi hàng.
+5. Sau khi cửa đã đóng, shipper nhấn `A`; ESP phát `evt/confirm_finish` action
    `deposit_confirmed`.
-7. Backend chuyển đơn sang `STORED`, ngăn sang `OCCUPIED` và bắt đầu tính thời
+6. Backend chuyển đơn sang `STORED`, ngăn sang `OCCUPIED` và bắt đầu tính thời
    gian lưu.
 
 Backend chống lặp webhook và chỉ phát lệnh mở một lần cho mỗi khoản thanh toán.
@@ -43,12 +41,11 @@ Nếu MQTT đang mất kết nối, khoản thanh toán vẫn được ghi nhậ
 
 ## Luồng nhận hàng
 
-1. Người nhận nhập OTP 8 số; ESP phát `evt/keypad/pickup_otp`.
-2. Nếu chưa quá hạn, backend hiển thị `door_guide`. Nếu quá hạn, backend tạo QR
-   phụ phí; webhook thanh toán sẽ tự động gửi lệnh mở đúng ngăn.
-3. Với đơn chưa quá hạn, người nhận nhấn `A`; ESP phát `open_confirmed` và
-   backend gửi `cmd/unlock` với purpose `PICKUP`. Với đơn vừa thanh toán phụ
-   phí, bước này đã được webhook thực hiện tự động.
+1. Người nhận bấm thanh toán trên web, hoặc nhập OTP 8 số tại tủ để ESP
+   phát `evt/keypad/pickup_otp`.
+2. Backend tạo QR cho toàn bộ phí: cước cơ bản cộng phí phát sinh theo thời gian.
+3. Webhook hợp lệ gửi `door_guide` với `auto_open=true`, sau đó phát
+   `cmd/unlock` purpose `PICKUP`. ESP không cho phép phím tắt bỏ qua thanh toán.
 4. Sau khi lấy hàng, đóng cửa và nhấn `A`, ESP phát `evt/confirm_finish` action
    `pickup_confirmed`.
 5. Backend chuyển đơn sang `COMPLETED` và ngăn sang `AVAILABLE`.

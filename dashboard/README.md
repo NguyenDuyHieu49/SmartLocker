@@ -3,7 +3,7 @@
 Nuxt SPA tĩnh cho ba vai trò:
 
 - Shipper tạo đơn và mở ngăn gửi hàng.
-- Người nhận xem phí, quét QR MoMo Sandbox và nhập OTP.
+- Người nhận thanh toán toàn bộ phí lưu trữ; webhook thành công tự mở tủ.
 - Admin xem 5 ngăn, mở thủ công và đọc audit log.
 
 ## Chạy local

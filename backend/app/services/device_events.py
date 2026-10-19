@@ -4,6 +4,7 @@ import secrets
 from concurrent.futures import Future
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +32,7 @@ from app.security import (
     normalize_phone,
     verify_code,
 )
-from app.services.commands import mark_command_ack
+from app.services.commands import mark_command_ack, publish_unlock
 from app.services.common import add_audit, calculate_fee, find_station_and_box
 from app.services.payment_service import (
     cancel_expired_pending_payments,
@@ -42,7 +43,6 @@ from app.services.payment_service import (
 from app.services.pricing import (
     STORAGE_DAY_MINUTES,
     calculate_deposit_fee,
-    pricing_snapshot_for_box,
     pricing_snapshot_for_compartment,
 )
 
@@ -301,29 +301,11 @@ class DeviceEventProcessor:
             },
         )
         await session.commit()
-        try:
-            payment, provider = await create_or_get_payment(
-                session,
-                self.payment_gateway,
-                order,
-                actor_id=None,
-                amount_vnd=price_vnd,
-            )
-        except Exception:
-            logger.exception("Failed to create deposit payment for %s", order_code)
-            self._show_error(device_id, "Khong tao duoc thanh toan")
-            return
-
-        vietqr_url = payment.qr_code or ""
-        if not vietqr_url or vietqr_url.startswith("MOCK-"):
-            vietqr_url = f"https://img.vietqr.io/image/MB-0375409205-compact2.png?amount={price_vnd}&addInfo=SB{order.order_code}"
-
         print(
-            f"\n==================== [PAYMENT QR CREATED] ====================\n"
+            f"\n==================== [DEPOSIT CREATED] ====================\n"
             f"Device: {device_id} | Ngăn: #{compartment.number + 1} | Cỡ: {size}\n"
-            f"Mã đơn: {order.order_code} | Số tiền: {price_vnd:,} VNĐ | Số ngày: {days}\n"
+            f"Mã đơn: {order.order_code} | Phí do người nhận thanh toán khi lấy hàng\n"
             f"SĐT nhận: {phone}\n"
-            f"Link VietQR: {vietqr_url}\n"
             f"==============================================================\n",
             flush=True,
         )
@@ -331,52 +313,50 @@ class DeviceEventProcessor:
         self.mqtt.show_ui(
             device_id,
             {
-                "screen": "payment",
+                "screen": "door_guide",
+                "mode": "deposit",
+                "box": compartment.number,
                 "order_code": order.order_code,
-                "amount_vnd": price_vnd,
-                "days": days,
-                "qr_code": vietqr_url,
-                "checkout_url": payment.checkout_url or vietqr_url,
-                "provider": provider,
+                "payer": "recipient",
             },
         )
 
-        if provider == "mock":
-            asyncio.create_task(
-                self._auto_mock_payment_success(
-                    order.id, payment.id, device_id, compartment.number, pickup_otp
-                )
-            )
-
-    async def _auto_mock_payment_success(
-        self, order_id: str, payment_id: str, device_id: str, box_number: int, otp: str
+    async def _auto_mock_pickup_payment_success(
+        self, order_id: str, payment_id: str, device_id: str, box_number: int
     ) -> None:
         await asyncio.sleep(5)
         async with SessionFactory() as session:
             order = await session.get(Order, order_id)
             payment = await session.get(Payment, payment_id)
-            if order is None or payment is None or order.status != OrderStatus.RESERVED.value:
+            if (
+                order is None
+                or payment is None
+                or order.status != OrderStatus.PAYMENT_PENDING.value
+            ):
                 return
             await mark_payment_paid(session, payment, order, reference="MOCK-AUTO-WEBHOOK")
-            await session.commit()
-
-            print(
-                f"\n================ [AUTO PAYMENT CONFIRMED] ================\n"
-                f"Đơn hàng {order.order_code} đã thanh toán tự động (sau 5 giây mock)!\n"
-                f"Mã OTP nhận đồ: {otp} | Ngăn #{box_number + 1}\n"
-                f"Đang gửi màn hình kết quả (screen='result') về ESP32...\n"
-                f"==========================================================\n",
-                flush=True,
+            self.mqtt.show_ui(
+                device_id,
+                {
+                    "screen": "door_guide",
+                    "mode": "pickup",
+                    "box": box_number,
+                    "auto_open": True,
+                },
             )
-
-        self.mqtt.show_ui(
-            device_id,
-            {
-                "screen": "result",
-                "otp": otp,
-                "box": box_number,
-            },
-        )
+            try:
+                await publish_unlock(
+                    session,
+                    self.mqtt,
+                    device_id=device_id,
+                    box=box_number,
+                    purpose=CommandPurpose.PICKUP,
+                    order_id=order.id,
+                    actor_id=None,
+                    reason="receiver_mock_payment_confirmed",
+                )
+            except RuntimeError:
+                logger.exception("Mock payment succeeded but pickup unlock failed")
 
     async def _cancel_payment(
         self, session: AsyncSession, device_id: str, order_code: str, reason: str
@@ -410,7 +390,8 @@ class DeviceEventProcessor:
             await cancel_order_payment(session, order, reason=reason)
             logger.info("Cancelled payment/order %s (reason=%s)", order.order_code, reason)
             print(
-                f"[PAYMENT] -> Đơn hàng {order.order_code} đã được hủy ({reason}). Đã giải phóng ngăn tủ.",
+                f"[PAYMENT] -> Giao dịch của đơn {order.order_code} đã hủy ({reason}). "
+                "Kiện hàng vẫn được giữ trong tủ.",
                 flush=True,
             )
 
@@ -433,7 +414,9 @@ class DeviceEventProcessor:
         order = await session.scalar(
             select(Order).where(
                 Order.pickup_otp_digest == code_digest(otp),
-                Order.status.in_([OrderStatus.STORED.value, OrderStatus.PICKUP_OPEN.value]),
+                Order.status.in_(
+                    [OrderStatus.STORED.value, OrderStatus.PAYMENT_PENDING.value]
+                ),
             )
         )
         mapping = await self._order_mapping(session, order, device_id)
@@ -446,31 +429,14 @@ class DeviceEventProcessor:
             self._show_error(device_id, "OTP khong hop le")
             return
         _, compartment = mapping
-        surcharge = max(0, calculate_fee(order) - order.base_fee_vnd)
-        if surcharge == 0:
-            self.mqtt.show_ui(
-                device_id,
-                {"screen": "door_guide", "mode": "pickup", "box": compartment.number},
-            )
-            return
-        overdue_days = max(1, (surcharge + order.unit_fee_vnd - 1) // order.unit_fee_vnd)
-        self.mqtt.show_ui(
-            device_id,
-            {
-                "screen": "overdue",
-                "box": compartment.number,
-                "overdue_days": overdue_days,
-                "daily_rate": order.unit_fee_vnd,
-                "amount_vnd": surcharge,
-            },
-        )
+        total_fee = calculate_fee(order)
         try:
             payment, provider = await create_or_get_payment(
                 session,
                 self.payment_gateway,
                 order,
                 actor_id=None,
-                amount_vnd=surcharge,
+                amount_vnd=total_fee,
             )
         except Exception:
             logger.exception("Failed to create overdue payment")
@@ -485,8 +451,16 @@ class DeviceEventProcessor:
                 "qr_code": payment.qr_code or "",
                 "checkout_url": payment.checkout_url or "",
                 "provider": provider,
+                "payer": "recipient",
+                "purpose": "pickup",
             },
         )
+        if provider == "mock":
+            asyncio.create_task(
+                self._auto_mock_pickup_payment_success(
+                    order.id, payment.id, device_id, compartment.number
+                )
+            )
 
     async def _open_confirmed(
         self, session: AsyncSession, device_id: str, mode: str, box: int
@@ -496,9 +470,17 @@ class DeviceEventProcessor:
             return
         _, compartment = await find_station_and_box(session, device_id, box)
         allowed_statuses = (
-            {OrderStatus.PAID.value, OrderStatus.DEPOSIT_OPEN.value}
+            {
+                OrderStatus.RESERVED.value,
+                OrderStatus.DEPOSIT_AUTHORIZED.value,
+                OrderStatus.DEPOSIT_OPEN.value,
+            }
             if mode == "deposit"
-            else {OrderStatus.STORED.value, OrderStatus.PAID.value, OrderStatus.PICKUP_OPEN.value}
+            else {
+                OrderStatus.PAID.value,
+                OrderStatus.PICKUP_AUTHORIZED.value,
+                OrderStatus.PICKUP_OPEN.value,
+            }
         )
         order = await session.scalar(
             select(Order)
@@ -522,6 +504,7 @@ class DeviceEventProcessor:
             else OrderStatus.PICKUP_OPEN.value
         )
         command = DeviceCommand(
+            request_id=f"local_{uuid4().hex}",
             device_id=device_id,
             box=box,
             purpose=purpose.value,
@@ -650,9 +633,16 @@ class DeviceEventProcessor:
             if command is None or command.order_id is None:
                 _, compartment = await find_station_and_box(session, device_id, box)
                 allowed = (
-                    [OrderStatus.DEPOSIT_OPEN.value, OrderStatus.PAID.value]
+                    [
+                        OrderStatus.DEPOSIT_OPEN.value,
+                        OrderStatus.DEPOSIT_AUTHORIZED.value,
+                    ]
                     if expected_purpose == CommandPurpose.DEPOSIT.value
-                    else [OrderStatus.PICKUP_OPEN.value, OrderStatus.STORED.value]
+                    else [
+                        OrderStatus.PICKUP_OPEN.value,
+                        OrderStatus.PICKUP_AUTHORIZED.value,
+                        OrderStatus.PAID.value,
+                    ]
                 )
                 order = await session.scalar(
                     select(Order)
@@ -672,13 +662,11 @@ class DeviceEventProcessor:
                 order.stored_at = datetime.now(UTC)
                 compartment.status = CompartmentStatus.OCCUPIED.value
                 action_name = "PACKAGE_STORED"
-                title = "GUI HANG THANH CONG"
             else:
                 order.status = OrderStatus.COMPLETED.value
                 order.completed_at = datetime.now(UTC)
                 compartment.status = CompartmentStatus.AVAILABLE.value
                 action_name = "PACKAGE_PICKED_UP"
-                title = "NHAN HANG THANH CONG"
             if command is not None:
                 command.status = CommandStatus.COMPLETED.value
             await add_audit(

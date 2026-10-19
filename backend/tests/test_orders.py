@@ -1,10 +1,12 @@
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.api.orders import create_order
+from app.api.orders import _ensure_recipient_or_admin, create_order
 from app.models import (
     AuditLog,
     Base,
@@ -61,3 +63,24 @@ async def test_create_order_flushes_id_before_writing_audit() -> None:
         assert created.status == "RESERVED"
 
     await engine.dispose()
+
+
+def test_only_recipient_or_admin_can_pay_for_order() -> None:
+    order = cast(
+        Any,
+        SimpleNamespace(recipient_phone="0901234567"),
+    )
+    recipient = cast(
+        Any,
+        SimpleNamespace(role=UserRole.CUSTOMER.value, phone="0901234567"),
+    )
+    shipper = cast(
+        Any,
+        SimpleNamespace(role=UserRole.SHIPPER.value, phone="0912345678"),
+    )
+
+    _ensure_recipient_or_admin(recipient, order)
+    with pytest.raises(HTTPException) as exc_info:
+        _ensure_recipient_or_admin(shipper, order)
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "recipient_payment_required"

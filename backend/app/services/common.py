@@ -54,11 +54,9 @@ async def order_view(
         stored_at=as_utc(order.stored_at),
         paid_at=as_utc(order.paid_at),
         completed_at=as_utc(order.completed_at),
-        fee_vnd=(
-            max(0, calculate_fee(order) - order.base_fee_vnd)
-            if order.stored_at is not None
-            else order.base_fee_vnd
-        ),
+        # The receiver pays the complete storage fee at pickup.  This is the
+        # base fee plus any extra started billing periods, not only a surcharge.
+        fee_vnd=calculate_fee(order),
         daily_rate_vnd=order.unit_fee_vnd,
         deposit_code=deposit_code,
         pickup_otp=(

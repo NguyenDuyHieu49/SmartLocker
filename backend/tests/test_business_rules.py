@@ -59,6 +59,12 @@ def test_fee_uses_daily_rate_during_first_24_hours() -> None:
     assert calculate_fee(order, now) == 5_000
 
 
+def test_receiver_fee_includes_base_fee_at_pickup() -> None:
+    now = datetime.now(UTC)
+    order = make_order(now - timedelta(hours=2))
+    assert calculate_fee(order, now) == order.base_fee_vnd
+
+
 def test_fee_charges_each_started_24_hour_period() -> None:
     now = datetime.now(UTC)
     order = make_order(now - timedelta(days=1, minutes=1))

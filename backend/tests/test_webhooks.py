@@ -99,9 +99,12 @@ async def test_payos_validation_sample_is_acknowledged() -> None:
     )
 
     assert result == {
+        "error": 0,
+        "message": "Ok",
         "success": True,
         "ignored": True,
         "reason": "payment_not_found",
+        "data": None,
     }
 
 
@@ -110,7 +113,7 @@ async def test_payos_validation_sample_is_acknowledged() -> None:
     ("stored", "expected_purpose", "expected_screen"),
     [
         (False, CommandPurpose.DEPOSIT, "result"),
-        (True, CommandPurpose.PICKUP, "opening"),
+        (True, CommandPurpose.PICKUP, "door_guide"),
     ],
 )
 async def test_paid_webhook_automatically_unlocks_compartment(
@@ -173,7 +176,13 @@ async def test_paid_webhook_automatically_unlocks_compartment(
 
         command = await session.scalar(select(DeviceCommand))
         await session.refresh(payment)
-        assert result == {"success": True, "duplicate": False}
+        assert result == {
+            "error": 0,
+            "message": "Ok",
+            "success": True,
+            "duplicate": False,
+            "data": None,
+        }
         assert payment.status == PaymentStatus.PAID.value
         assert command is not None
         assert command.purpose == expected_purpose.value
@@ -181,7 +190,6 @@ async def test_paid_webhook_automatically_unlocks_compartment(
         assert [event[0] for event in mqtt.events] == ["ui", "unlock"]
         ui_payload = cast(dict[str, object], mqtt.events[0][2])
         assert ui_payload["screen"] == expected_screen
-        if not stored:
-            assert ui_payload["auto_open"] is True
+        assert ui_payload["auto_open"] is True
 
     await engine.dispose()
