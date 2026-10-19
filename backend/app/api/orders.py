@@ -41,7 +41,12 @@ from app.security import (
 from app.services.commands import publish_unlock
 from app.services.common import add_audit, calculate_fee, order_view
 from app.services.device_events import DeviceEventProcessor
-from app.services.payment_service import create_or_get_payment, mark_payment_paid
+from app.services.payment_service import (
+    cancel_expired_pending_payments,
+    cancel_order_payment,
+    create_or_get_payment,
+    mark_payment_paid,
+)
 from app.services.pricing import pricing_snapshot_for_box
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
@@ -160,6 +165,7 @@ async def create_order(
 
 @router.get("", response_model=list[OrderView])
 async def list_orders(session: SessionDep, user: CurrentUser) -> list[OrderView]:
+    await cancel_expired_pending_payments(session, max_age_minutes=15)
     query = select(Order).order_by(Order.created_at.desc())
     if user.role == UserRole.SHIPPER.value:
         query = query.where(Order.shipper_id == user.id)
@@ -175,6 +181,20 @@ async def list_orders(session: SessionDep, user: CurrentUser) -> list[OrderView]
         )
         for order in orders
     ]
+
+
+@router.post("/{order_code}/cancel")
+async def cancel_order(
+    order_code: str,
+    session: SessionDep,
+    user: CurrentUser,
+) -> dict[str, bool]:
+    order = await _load_order(session, order_code)
+    _ensure_access(user, order)
+    if order.status not in (OrderStatus.RESERVED.value, OrderStatus.PAYMENT_PENDING.value):
+        raise HTTPException(status_code=400, detail="order_not_cancellable")
+    await cancel_order_payment(session, order, reason="user_cancelled", actor_id=user.id)
+    return {"success": True}
 
 
 @router.get("/{order_code}", response_model=OrderView)
@@ -328,6 +348,8 @@ async def pickup_quote(
 ) -> PickupQuote:
     order = await _load_order(session, order_code)
     _ensure_access(user, order)
+    if order.status == OrderStatus.OVERDUE.value:
+        raise HTTPException(status_code=400, detail="order_overdue_contact_support")
     if order.status not in {
         OrderStatus.STORED.value,
         OrderStatus.PAYMENT_PENDING.value,
@@ -390,6 +412,10 @@ async def pickup(
 ) -> dict[str, str]:
     order = await _load_order(session, order_code)
     _ensure_access(user, order)
+    if order.status == OrderStatus.OVERDUE.value:
+        raise HTTPException(
+            status_code=400, detail="order_overdue_contact_support"
+        )
     if order.status not in {OrderStatus.STORED.value, OrderStatus.PAID.value}:
         raise HTTPException(status_code=409, detail="payment_required")
     if (

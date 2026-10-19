@@ -1,23 +1,39 @@
 import json
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta, timezone
 from typing import Annotated
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 
 from app.dependencies import SessionDep, require_roles
-from app.models import AuditLog, Order, Payment, PaymentStatus, User, UserRole
+from app.models import (
+    AuditLog,
+    Compartment,
+    CompartmentStatus,
+    LockerStation,
+    Order,
+    OrderStatus,
+    Payment,
+    PaymentStatus,
+    User,
+    UserRole,
+    utc_now,
+)
 from app.schemas import (
     AdminDashboardView,
     DailyRevenue,
     RevenueSummary,
     RevenueTransaction,
 )
+from app.services.common import add_audit, calculate_fee
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 AdminUser = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
-VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+try:
+    VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+except ZoneInfoNotFoundError:
+    VIETNAM_TZ = timezone(timedelta(hours=7))
 
 
 @router.get("/dashboard", response_model=AdminDashboardView)
@@ -140,3 +156,71 @@ async def audit_logs(
         }
         for item in logs
     ]
+
+
+@router.post("/orders/{order_id}/resolve-overdue")
+async def resolve_overdue(
+    order_id: str,
+    request: Request,
+    session: SessionDep,
+    user: AdminUser,
+) -> dict[str, object]:
+    order = await session.get(Order, order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="order_not_found")
+    if order.status not in (OrderStatus.OVERDUE.value, OrderStatus.STORED.value):
+        raise HTTPException(status_code=400, detail="order_not_overdue_or_stored")
+
+    compartment = await session.get(Compartment, order.compartment_id)
+    if compartment is None:
+        raise HTTPException(status_code=404, detail="compartment_not_found")
+    station = await session.get(LockerStation, compartment.station_id)
+    if station is None:
+        raise HTTPException(status_code=404, detail="station_not_found")
+
+    surcharge = max(0, calculate_fee(order) - order.base_fee_vnd) if order.stored_at is not None else 0
+    if surcharge == 0 and order.status == OrderStatus.OVERDUE.value:
+        surcharge = order.unit_fee_vnd or 2000
+    fee = surcharge
+
+    now = utc_now()
+    if fee > 0:
+        payment = Payment(
+            order_id=order.id,
+            user_id=order.shipper_id or user.id,
+            amount_vnd=fee,
+            status=PaymentStatus.PAID.value,
+            provider="admin_cash",
+            transaction_ref=f"OVERDUE-{order.order_code}",
+            paid_at=now,
+        )
+        session.add(payment)
+
+    order.status = OrderStatus.COMPLETED.value
+    order.completed_at = now
+    compartment.status = CompartmentStatus.AVAILABLE.value
+
+    await add_audit(
+        session,
+        action="ADMIN_RESOLVE_OVERDUE",
+        entity_type="order",
+        entity_id=order.id,
+        detail={
+            "admin_id": user.id,
+            "order_code": order.order_code,
+            "box": compartment.number,
+            "surcharge_vnd": fee,
+        },
+    )
+    await session.commit()
+
+    try:
+        request.app.state.mqtt_service.unlock(station.device_id, compartment.number, purpose="admin")
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "fee_vnd": fee,
+        "message": f"Đã thanh toán phụ phí {fee:,}đ, mở chốt ngăn {compartment.number + 1} và giải phóng ngăn tủ thành công.",
+    }

@@ -123,7 +123,8 @@ class MqttService:
         device_id, category, event_name = parts[1], parts[2], parts[3]
         try:
             raw = message.payload.decode("utf-8")
-            logger.debug("MQTT received topic=%s payload=%s", message.topic, raw)
+            print(f"[MQTT RECV] topic='{message.topic}': {raw}", flush=True)
+            logger.info("MQTT received topic=%s payload=%s", message.topic, raw)
             if category == "status" and event_name == "availability":
                 self.registry.set_availability(device_id, raw == "online")
                 return
@@ -184,9 +185,12 @@ class MqttService:
     ) -> tuple[str, str]:
         topic = f"smartbox/{device_id}/cmd/{command}"
         request_id = payload.get("request_id", "")
+        payload_str = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+        print(f"[MQTT SEND] topic='{topic}': {payload_str}", flush=True)
+        logger.info("MQTT published topic=%s payload=%s", topic, payload_str)
         info = self.client.publish(
             topic,
-            json.dumps(payload, separators=(",", ":")),
+            payload_str,
             qos=qos,
             retain=False,
         )
@@ -228,3 +232,7 @@ class MqttService:
 
     def show_ui(self, device_id: str, payload: dict[str, Any]) -> tuple[str, str]:
         return self._publish_command(device_id, "ui", payload, qos=1)
+
+    def sync_config(self, device_id: str, payload: dict[str, Any]) -> tuple[str, str]:
+        return self._publish_command(device_id, "config", payload, qos=1)
+

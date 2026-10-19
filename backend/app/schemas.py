@@ -123,3 +123,24 @@ class AdminDashboardView(BaseModel):
     revenue: RevenueSummary
     daily_revenue: list[DailyRevenue]
     recent_transactions: list[RevenueTransaction]
+
+
+class CompartmentConfigView(BaseModel):
+    number: int
+    size: str
+    status: str
+    dimensions: str
+    base_price: int
+    overdue_price_per_day: int
+    max_overdue_days: int
+
+    model_config = {"from_attributes": True}
+
+
+class UpdateCompartmentConfigRequest(BaseModel):
+    size: str | None = None
+    dimensions: str | None = None
+    base_price: int | None = None
+    overdue_price_per_day: int | None = None
+    max_overdue_days: int | None = None
+

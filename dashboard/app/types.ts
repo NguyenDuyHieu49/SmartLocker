@@ -94,3 +94,14 @@ export interface AdminDashboard {
   daily_revenue: DailyRevenue[]
   recent_transactions: RevenueTransaction[]
 }
+
+export interface CompartmentConfig {
+  number: number
+  size: string
+  status: string
+  dimensions: string
+  base_price: number
+  overdue_price_per_day: number
+  max_overdue_days: number
+}
+

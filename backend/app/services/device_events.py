@@ -19,6 +19,7 @@ from app.models import (
     LockerStation,
     Order,
     OrderStatus,
+    Payment,
     User,
 )
 from app.mqtt.service import MqttService
@@ -30,10 +31,20 @@ from app.security import (
     normalize_phone,
     verify_code,
 )
-from app.services.commands import mark_command_ack, publish_unlock
+from app.services.commands import mark_command_ack
 from app.services.common import add_audit, calculate_fee, find_station_and_box
-from app.services.payment_service import create_or_get_payment
-from app.services.pricing import pricing_snapshot_for_box
+from app.services.payment_service import (
+    cancel_expired_pending_payments,
+    cancel_order_payment,
+    create_or_get_payment,
+    mark_payment_paid,
+)
+from app.services.pricing import (
+    STORAGE_DAY_MINUTES,
+    calculate_deposit_fee,
+    pricing_snapshot_for_box,
+    pricing_snapshot_for_compartment,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,11 +123,16 @@ class DeviceEventProcessor:
                     session, device_id, str(payload.get("value", ""))
                 )
             elif action == "deposit_phone":
+                try:
+                    days = int(payload.get("days", 3))
+                except (TypeError, ValueError):
+                    days = 3
                 await self._deposit_phone(
                     session,
                     device_id,
                     str(payload.get("value", "")),
                     str(payload.get("extra", "")),
+                    days,
                 )
             elif action == "pickup_otp":
                 await self._pickup_otp(
@@ -130,14 +146,28 @@ class DeviceEventProcessor:
                 await self._open_confirmed(
                     session, device_id, str(payload.get("extra", "")), box
                 )
+            elif action == "cancel_payment":
+                await self._cancel_payment(
+                    session,
+                    device_id,
+                    str(payload.get("value", "")),
+                    str(payload.get("extra", "user_cancelled")),
+                )
+            elif action == "tech_clear_box":
+                try:
+                    box = int(payload.get("value", -1))
+                except (TypeError, ValueError):
+                    box = -1
+                await self._tech_clear_box(session, device_id, box)
             else:
                 self._show_error(device_id, "Yeu cau ban phim khong hop le")
 
     async def _check_box_availability(
         self, session: AsyncSession, device_id: str, size: str
     ) -> None:
+        await cancel_expired_pending_payments(session, max_age_minutes=15)
         size = size.upper()
-        if size not in {"S", "M"}:
+        if size not in {"S", "M", "L"}:
             self._show_error(device_id, "Kich thuoc ngan khong hop le")
             return
         station = await session.scalar(
@@ -164,14 +194,15 @@ class DeviceEventProcessor:
             ).all()
         )
         physical = self.mqtt.registry.get_device(device_id)
-        doors = {box.box: box.door_closed for box in physical.boxes}
+        doors = {box.box: box.door_closed for box in physical.boxes} if physical else {}
+        # Ưu tiên chọn ngăn đang đóng cửa; nếu ngăn chưa đóng switch thì vẫn lấy ngăn AVAILABLE trong DB
         available = next(
             (
                 compartment
                 for compartment in compartments
-                if doors.get(compartment.number, True)
+                if doors.get(compartment.number, False)
             ),
-            None,
+            compartments[0] if compartments else None,
         )
         if available is None:
             self._show_error(device_id, f"Khong con ngan {size}")
@@ -181,6 +212,8 @@ class DeviceEventProcessor:
             {
                 "screen": "enter_phone",
                 "size": size,
+                "available": True,
+                "box": available.number,
                 "available_box": available.number,
             },
         )
@@ -191,15 +224,19 @@ class DeviceEventProcessor:
         device_id: str,
         raw_phone: str,
         size: str,
+        days: int = 3,
     ) -> None:
         try:
             phone = normalize_phone(raw_phone)
         except ValueError:
             self._show_error(device_id, "So dien thoai khong hop le")
             return
-        if len(phone) != 10 or size not in {"S", "M"}:
-            self._show_error(device_id, "SDT hoac kich thuoc khong hop le")
+        if len(phone) != 10 or not phone.startswith("0") or size not in {"S", "M", "L"}:
+            self._show_error(device_id, "SDT phai bat dau bang 0 va co 10 so")
             return
+        if days <= 0:
+            days = 3
+
         station = await session.scalar(
             select(LockerStation).where(
                 LockerStation.device_id == device_id,
@@ -223,12 +260,15 @@ class DeviceEventProcessor:
         if compartment is None:
             self._show_error(device_id, f"Khong con ngan {size}")
             return
+
+        price_vnd = calculate_deposit_fee(compartment, days)
         recipient = await session.scalar(select(User).where(User.phone == phone))
         order_code = f"{secrets.randbelow(100_000_000):08d}"
         pickup_otp = derive_numeric_code(order_code, "pickup", length=8)
-        base_fee, grace_minutes, billing_unit_minutes, unit_fee = (
-            pricing_snapshot_for_box(compartment.number)
+        base_fee, _, billing_unit_minutes, unit_fee = (
+            pricing_snapshot_for_compartment(compartment)
         )
+        grace_minutes = days * STORAGE_DAY_MINUTES
         order = Order(
             order_code=order_code,
             shipper_id=None,
@@ -238,7 +278,7 @@ class DeviceEventProcessor:
             status=OrderStatus.RESERVED.value,
             deposit_code_digest=code_digest(generate_numeric_code(12)),
             pickup_otp_digest=code_digest(pickup_otp),
-            base_fee_vnd=base_fee,
+            base_fee_vnd=price_vnd,
             grace_minutes=grace_minutes,
             billing_unit_minutes=billing_unit_minutes,
             unit_fee_vnd=unit_fee,
@@ -255,6 +295,8 @@ class DeviceEventProcessor:
                 "device_id": device_id,
                 "box": compartment.number,
                 "size": size,
+                "days": days,
+                "fee": price_vnd,
                 "daily_rate_vnd": base_fee,
             },
         )
@@ -265,23 +307,112 @@ class DeviceEventProcessor:
                 self.payment_gateway,
                 order,
                 actor_id=None,
-                amount_vnd=order.base_fee_vnd,
+                amount_vnd=price_vnd,
             )
         except Exception:
             logger.exception("Failed to create deposit payment for %s", order_code)
             self._show_error(device_id, "Khong tao duoc thanh toan")
             return
+
+        vietqr_url = payment.qr_code or ""
+        if not vietqr_url or vietqr_url.startswith("MOCK-"):
+            vietqr_url = f"https://img.vietqr.io/image/MB-0375409205-compact2.png?amount={price_vnd}&addInfo=SB{order.order_code}"
+
+        print(
+            f"\n==================== [PAYMENT QR CREATED] ====================\n"
+            f"Device: {device_id} | Ngăn: #{compartment.number + 1} | Cỡ: {size}\n"
+            f"Mã đơn: {order.order_code} | Số tiền: {price_vnd:,} VNĐ | Số ngày: {days}\n"
+            f"SĐT nhận: {phone}\n"
+            f"Link VietQR: {vietqr_url}\n"
+            f"==============================================================\n",
+            flush=True,
+        )
+
         self.mqtt.show_ui(
             device_id,
             {
                 "screen": "payment",
                 "order_code": order.order_code,
-                "amount_vnd": payment.amount_vnd,
-                "qr_code": payment.qr_code or "",
-                "checkout_url": payment.checkout_url or "",
+                "amount_vnd": price_vnd,
+                "days": days,
+                "qr_code": vietqr_url,
+                "checkout_url": payment.checkout_url or vietqr_url,
                 "provider": provider,
             },
         )
+
+        if provider == "mock":
+            asyncio.create_task(
+                self._auto_mock_payment_success(
+                    order.id, payment.id, device_id, compartment.number, pickup_otp
+                )
+            )
+
+    async def _auto_mock_payment_success(
+        self, order_id: str, payment_id: str, device_id: str, box_number: int, otp: str
+    ) -> None:
+        await asyncio.sleep(5)
+        async with SessionFactory() as session:
+            order = await session.get(Order, order_id)
+            payment = await session.get(Payment, payment_id)
+            if order is None or payment is None or order.status != OrderStatus.RESERVED.value:
+                return
+            await mark_payment_paid(session, payment, order, reference="MOCK-AUTO-WEBHOOK")
+            await session.commit()
+
+            print(
+                f"\n================ [AUTO PAYMENT CONFIRMED] ================\n"
+                f"Đơn hàng {order.order_code} đã thanh toán tự động (sau 5 giây mock)!\n"
+                f"Mã OTP nhận đồ: {otp} | Ngăn #{box_number + 1}\n"
+                f"Đang gửi màn hình kết quả (screen='result') về ESP32...\n"
+                f"==========================================================\n",
+                flush=True,
+            )
+
+        self.mqtt.show_ui(
+            device_id,
+            {
+                "screen": "result",
+                "otp": otp,
+                "box": box_number,
+            },
+        )
+
+    async def _cancel_payment(
+        self, session: AsyncSession, device_id: str, order_code: str, reason: str
+    ) -> None:
+        order: Order | None = None
+        if order_code:
+            order = await session.scalar(
+                select(Order).where(Order.order_code == order_code)
+            )
+        if order is None:
+            station = await session.scalar(
+                select(LockerStation).where(LockerStation.device_id == device_id)
+            )
+            if station:
+                order = await session.scalar(
+                    select(Order)
+                    .join(Compartment, Order.compartment_id == Compartment.id)
+                    .where(
+                        Compartment.station_id == station.id,
+                        Order.status.in_(
+                            [
+                                OrderStatus.RESERVED.value,
+                                OrderStatus.PAYMENT_PENDING.value,
+                            ]
+                        ),
+                    )
+                    .order_by(Order.created_at.desc())
+                    .limit(1)
+                )
+        if order is not None:
+            await cancel_order_payment(session, order, reason=reason)
+            logger.info("Cancelled payment/order %s (reason=%s)", order.order_code, reason)
+            print(
+                f"[PAYMENT] -> Đơn hàng {order.order_code} đã được hủy ({reason}). Đã giải phóng ngăn tủ.",
+                flush=True,
+            )
 
     async def _pickup_otp(
         self, session: AsyncSession, device_id: str, otp: str
@@ -289,10 +420,20 @@ class DeviceEventProcessor:
         if len(otp) != 8 or not otp.isdigit():
             self._show_error(device_id, "OTP phai co 8 chu so")
             return
+        overdue_order = await session.scalar(
+            select(Order).where(
+                Order.pickup_otp_digest == code_digest(otp),
+                Order.status == OrderStatus.OVERDUE.value,
+            )
+        )
+        if overdue_order is not None:
+            self._show_error(device_id, "Don qua han, vui long lien he CSKH")
+            return
+
         order = await session.scalar(
             select(Order).where(
                 Order.pickup_otp_digest == code_digest(otp),
-                Order.status == OrderStatus.STORED.value,
+                Order.status.in_([OrderStatus.STORED.value, OrderStatus.PICKUP_OPEN.value]),
             )
         )
         mapping = await self._order_mapping(session, order, device_id)
@@ -355,9 +496,9 @@ class DeviceEventProcessor:
             return
         _, compartment = await find_station_and_box(session, device_id, box)
         allowed_statuses = (
-            {OrderStatus.PAID.value}
+            {OrderStatus.PAID.value, OrderStatus.DEPOSIT_OPEN.value}
             if mode == "deposit"
-            else {OrderStatus.STORED.value, OrderStatus.PAID.value}
+            else {OrderStatus.STORED.value, OrderStatus.PAID.value, OrderStatus.PICKUP_OPEN.value}
         )
         order = await session.scalar(
             select(Order)
@@ -373,38 +514,33 @@ class DeviceEventProcessor:
         purpose = (
             CommandPurpose.DEPOSIT if mode == "deposit" else CommandPurpose.PICKUP
         )
-        await self._publish_access_unlock(
-            session, device_id, order, compartment, purpose
+        # ESP32 đã tự mở chốt servo vật lý sau khi khách bấm [A] ở hướng dẫn cuối cùng.
+        # Backend chỉ cập nhật trạng thái đơn và ghi nhận command history, không gửi cmd/unlock hay reset UI.
+        order.status = (
+            OrderStatus.DEPOSIT_OPEN.value
+            if purpose == CommandPurpose.DEPOSIT
+            else OrderStatus.PICKUP_OPEN.value
         )
-
-    async def _publish_access_unlock(
-        self,
-        session: AsyncSession,
-        device_id: str,
-        order: Order,
-        compartment: Compartment,
-        purpose: CommandPurpose,
-    ) -> None:
-        try:
-            await publish_unlock(
-                session,
-                self.mqtt,
-                device_id=device_id,
-                box=compartment.number,
-                purpose=purpose,
-                order_id=order.id,
-                actor_id=None,
-            )
-        except RuntimeError:
-            self._show_error(device_id, "Tu dang mat ket noi")
-            return
-        self.mqtt.show_ui(
-            device_id,
-            {
-                "screen": "door_guide",
-                "mode": purpose.value.lower(),
-                "box": compartment.number,
-            },
+        command = DeviceCommand(
+            device_id=device_id,
+            box=box,
+            purpose=purpose.value,
+            status=CommandStatus.ACKNOWLEDGED.value,
+            order_id=order.id,
+        )
+        session.add(command)
+        await add_audit(
+            session,
+            action=f"{purpose.value}_DOOR_OPENED",
+            entity_type="order",
+            entity_id=order.id,
+            detail={"device_id": device_id, "box": box, "mode": mode},
+        )
+        await session.commit()
+        print(
+            f"[DOOR OPEN CONFIRMED] Device {device_id} - Ngăn #{box + 1} ({mode}). "
+            f"ESP32 đã tự mở chốt servo sau khi nhấn [A] ở hướng dẫn cuối.",
+            flush=True,
         )
 
     @staticmethod
@@ -512,10 +648,23 @@ class DeviceEventProcessor:
                 .order_by(DeviceCommand.created_at.desc())
             )
             if command is None or command.order_id is None:
-                self._show_error(device_id, "Khong tim thay lenh mo tu")
-                return
-            order = await session.get(Order, command.order_id)
-            _, compartment = await find_station_and_box(session, device_id, box)
+                _, compartment = await find_station_and_box(session, device_id, box)
+                allowed = (
+                    [OrderStatus.DEPOSIT_OPEN.value, OrderStatus.PAID.value]
+                    if expected_purpose == CommandPurpose.DEPOSIT.value
+                    else [OrderStatus.PICKUP_OPEN.value, OrderStatus.STORED.value]
+                )
+                order = await session.scalar(
+                    select(Order)
+                    .where(Order.compartment_id == compartment.id, Order.status.in_(allowed))
+                    .order_by(Order.created_at.desc())
+                )
+                if order is None:
+                    self._show_error(device_id, "Khong tim thay lenh mo tu")
+                    return
+            else:
+                order = await session.get(Order, command.order_id)
+                _, compartment = await find_station_and_box(session, device_id, box)
             if order is None:
                 return
             if expected_purpose == CommandPurpose.DEPOSIT.value:
@@ -530,7 +679,8 @@ class DeviceEventProcessor:
                 compartment.status = CompartmentStatus.AVAILABLE.value
                 action_name = "PACKAGE_PICKED_UP"
                 title = "NHAN HANG THANH CONG"
-            command.status = CommandStatus.COMPLETED.value
+            if command is not None:
+                command.status = CommandStatus.COMPLETED.value
             await add_audit(
                 session,
                 action=action_name,
@@ -539,7 +689,64 @@ class DeviceEventProcessor:
                 detail={"device_id": device_id, "box": box},
             )
             await session.commit()
-            self.mqtt.show_ui(
-                device_id,
-                {"screen": "message", "title": title, "message": "Cam on ban", "success": True},
+            print(
+                f"[{action_name}] Device {device_id} - Ngăn #{box + 1} hoàn tất. Đã lưu trạng thái DB.",
+                flush=True,
             )
+
+    async def _tech_clear_box(
+        self, session: AsyncSession, device_id: str, box: int
+    ) -> None:
+        if box < 0 or box >= 4:
+            return
+        station = await session.scalar(
+            select(LockerStation).where(LockerStation.device_id == device_id)
+        )
+        if station is None:
+            return
+        compartment = await session.scalar(
+            select(Compartment).where(
+                Compartment.station_id == station.id, Compartment.number == box
+            )
+        )
+        if compartment is None:
+            return
+        active_order = await session.scalar(
+            select(Order)
+            .where(
+                Order.compartment_id == compartment.id,
+                Order.status.in_(
+                    [
+                        OrderStatus.STORED.value,
+                        OrderStatus.OVERDUE.value,
+                        OrderStatus.PICKUP_OPEN.value,
+                        OrderStatus.DEPOSIT_OPEN.value,
+                        OrderStatus.PAID.value,
+                    ]
+                ),
+            )
+            .order_by(Order.created_at.desc())
+            .limit(1)
+        )
+        if active_order is not None:
+            active_order.status = OrderStatus.MANUAL_REVIEW.value
+            await add_audit(
+                session,
+                action="TECH_CLEAR_BOX",
+                entity_type="order",
+                entity_id=active_order.id,
+                detail={
+                    "device_id": device_id,
+                    "box": box,
+                    "previous_status": active_order.status,
+                    "order_code": active_order.order_code,
+                },
+            )
+        compartment.status = CompartmentStatus.AVAILABLE.value
+        await session.commit()
+        logger.info(
+            "Technician cleared box %s on device %s. Compartment set to AVAILABLE.",
+            box,
+            device_id,
+        )
+

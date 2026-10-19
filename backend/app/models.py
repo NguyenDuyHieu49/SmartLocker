@@ -39,6 +39,7 @@ class OrderStatus(StrEnum):
     PICKUP_OPEN = "PICKUP_OPEN"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
+    OVERDUE = "OVERDUE"
     MANUAL_REVIEW = "MANUAL_REVIEW"
 
 
@@ -112,6 +113,10 @@ class Compartment(Base):
     number: Mapped[int] = mapped_column(Integer)
     size: Mapped[str] = mapped_column(String(8), default="S")
     status: Mapped[str] = mapped_column(String(30), default=CompartmentStatus.AVAILABLE)
+    dimensions: Mapped[str] = mapped_column(String(32), default="10x10x10")
+    base_price: Mapped[int] = mapped_column(Integer, default=5000)
+    overdue_price_per_day: Mapped[int] = mapped_column(Integer, default=2000)
+    max_overdue_days: Mapped[int] = mapped_column(Integer, default=3)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )

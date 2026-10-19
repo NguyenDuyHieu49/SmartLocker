@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 
 class BoxStatus(BaseModel):
     box: int = Field(ge=0, le=4)
-    size: Literal["S", "M", "TECH"]
+    size: Literal["S", "M", "L", "TECH"] | str = "S"
+    occupied: bool = False
     door_closed: bool
 
 
@@ -38,9 +39,10 @@ class UnlockResult(BaseModel):
 
 
 class KeypadEvent(BaseModel):
-    action: Literal["check_box", "deposit_phone", "pickup_otp", "open_confirmed"]
+    action: Literal["check_box", "deposit_phone", "pickup_otp", "open_confirmed"] | str
     value: str
     extra: str = ""
+    days: int = 3
 
 
 class ConfirmFinishEvent(BaseModel):

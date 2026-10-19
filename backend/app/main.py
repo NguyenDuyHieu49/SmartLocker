@@ -2,6 +2,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,10 +18,15 @@ from app.api.orders import router as orders_router
 from app.api.webhooks import router as webhooks_router
 from app.bootstrap import initialize_database
 from app.core.config import get_settings
+from app.db import SessionFactory
 from app.mqtt.registry import DeviceRegistry
 from app.mqtt.service import MqttService
 from app.payments import PayOSGateway, create_payment_gateway
 from app.services.device_events import DeviceEventProcessor
+from app.services.payment_service import (
+    cancel_expired_pending_payments,
+    mark_overdue_orders,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,14 +63,39 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # the locker API unavailable during a transient payOS/DNS failure.
             logger.exception("payOS webhook confirmation failed")
     processor = DeviceEventProcessor(mqtt, payment_gateway, asyncio.get_running_loop())
-    mqtt.set_event_handler(processor.submit)
+
+    def on_device_event(device_id: str, event_name: str, payload: dict[str, Any]) -> None:
+        print(f"[MQTT EVENT] device='{device_id}' event='{event_name}' payload={payload}", flush=True)
+        logger.info("[MQTT EVENT] device='%s' event='%s' payload=%s", device_id, event_name, payload)
+        processor.submit(device_id, event_name, payload)
+
+    mqtt.set_event_handler(on_device_event)
     app.state.mqtt = mqtt
     app.state.device_event_processor = processor
     app.state.payment_gateway = payment_gateway
     mqtt.start()
+
+    async def _payment_expiry_loop(interval_seconds: int = 30) -> None:
+        while True:
+            try:
+                await asyncio.sleep(interval_seconds)
+                async with SessionFactory() as session:
+                    await cancel_expired_pending_payments(session, max_age_minutes=15)
+                    await mark_overdue_orders(session)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Error during payment expiry background check")
+
+    expiry_task = asyncio.create_task(_payment_expiry_loop())
     try:
         yield
     finally:
+        expiry_task.cancel()
+        try:
+            await expiry_task
+        except asyncio.CancelledError:
+            pass
         mqtt.stop()
 
 
