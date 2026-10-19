@@ -29,7 +29,7 @@ from app.schemas import (
     RevenueTransaction,
 )
 from app.services.commands import publish_unlock
-from app.services.common import add_audit, calculate_fee
+from app.services.common import add_audit, as_utc, calculate_fee
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 AdminUser = Annotated[User, Depends(require_roles(UserRole.ADMIN))]
@@ -127,7 +127,7 @@ async def dashboard(
                 order_code=order_code,
                 provider=payment.provider,
                 amount_vnd=payment.amount_vnd,
-                paid_at=payment.paid_at,
+                paid_at=as_utc(payment.paid_at),
             )
             for payment, order_code in recent_rows
             if payment.paid_at is not None
@@ -156,7 +156,10 @@ async def audit_logs(
             "entity_type": item.entity_type,
             "entity_id": item.entity_id,
             "detail": json.loads(item.detail_json),
-            "created_at": item.created_at,
+            # SQLite may return timezone-aware columns as naive datetimes.
+            # Always expose an explicit UTC offset so browsers do not mistake
+            # UTC for their local wall-clock time.
+            "created_at": as_utc(item.created_at),
         }
         for item in logs
     ]

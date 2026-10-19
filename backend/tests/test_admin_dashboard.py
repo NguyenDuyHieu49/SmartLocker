@@ -82,6 +82,8 @@ async def test_admin_revenue_counts_only_paid_payments() -> None:
         assert result.revenue.total_vnd == 5_000
         assert result.revenue.paid_transactions == 1
         assert len(result.recent_transactions) == 1
+        assert result.recent_transactions[0].paid_at.tzinfo is not None
+        assert result.recent_transactions[0].paid_at.utcoffset() is not None
         assert sum(day.amount_vnd for day in result.daily_revenue) == 5_000
 
     await engine.dispose()

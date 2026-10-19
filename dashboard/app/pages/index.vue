@@ -57,7 +57,32 @@ let pollTimer: ReturnType<typeof setInterval> | undefined
 const roleLabel = computed(() => ({ SHIPPER: 'Shipper', CUSTOMER: 'Người nhận', ADMIN: 'Vận hành' }[user.value?.role || 'CUSTOMER']))
 const activeOrders = computed(() => orders.value.filter((item) => !['COMPLETED', 'CANCELLED'].includes(item.status)))
 const money = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value)
-const date = (value: string | null) => value ? new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '—'
+const VIETNAM_TIME_ZONE = 'Asia/Ho_Chi_Minh'
+
+function serverDate(value: string) {
+  // Older SQLite responses can omit the UTC suffix even though the database
+  // value is UTC. Add it only when the API did not provide any offset.
+  const explicitZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)
+  return new Date(explicitZone ? value : `${value}Z`)
+}
+
+const date = (value: string | null) => {
+  if (!value) return '—'
+  const parsed = serverDate(value)
+  if (Number.isNaN(parsed.getTime())) return '—'
+  return new Intl.DateTimeFormat('vi-VN', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone: VIETNAM_TIME_ZONE,
+  }).format(parsed)
+}
+
+const calendarDate = (value: string) => new Intl.DateTimeFormat('vi-VN', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  timeZone: VIETNAM_TIME_ZONE,
+}).format(new Date(`${value}T12:00:00+07:00`))
 
 function translateStatus(value: string) {
   return ({ RESERVED: 'Đã giữ · chờ gửi', DEPOSIT_AUTHORIZED: 'Đã cấp quyền gửi', DEPOSIT_OPEN: 'Đang đặt hàng', STORED: 'Đang lưu hàng', PAYMENT_PENDING: 'Chờ thanh toán', PAID: 'Đã thanh toán · chờ thao tác', PICKUP_AUTHORIZED: 'Đã cấp quyền nhận', PICKUP_OPEN: 'Đang lấy hàng', COMPLETED: 'Đã nhận hàng', CANCELLED: 'Đã hủy', MANUAL_REVIEW: 'KTV cần xử lý', AVAILABLE: 'Sẵn sàng', OCCUPIED: 'Đang có hàng', OUT_OF_SERVICE: 'Bảo trì', TECH: 'Ngăn kỹ thuật', DOOR_OPEN: 'Cửa mở bất thường', PHYSICAL_UNKNOWN: 'Chưa có dữ liệu cửa', OVERDUE: 'Quá hạn lưu kho' } as Record<string, string>)[value] || value
@@ -480,7 +505,7 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer) })
 
         <div class="panel revenue-panel">
           <div class="panel-head"><div><p class="eyebrow">BẢNG DOANH THU</p><h2>7 ngày gần nhất</h2></div><span class="count">Đã thu</span></div>
-          <div class="table-scroll"><table><thead><tr><th>Ngày</th><th>Giao dịch</th><th>Doanh thu</th></tr></thead><tbody><tr v-for="row in adminDashboard?.daily_revenue" :key="row.date"><td>{{ new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${row.date}T00:00:00`)) }}</td><td>{{ row.transaction_count }}</td><td><b>{{ money(row.amount_vnd) }}</b></td></tr></tbody></table></div>
+          <div class="table-scroll"><table><thead><tr><th>Ngày</th><th>Giao dịch</th><th>Doanh thu</th></tr></thead><tbody><tr v-for="row in adminDashboard?.daily_revenue" :key="row.date"><td>{{ calendarDate(row.date) }}</td><td>{{ row.transaction_count }}</td><td><b>{{ money(row.amount_vnd) }}</b></td></tr></tbody></table></div>
         </div>
 
         <div class="panel transaction-panel">

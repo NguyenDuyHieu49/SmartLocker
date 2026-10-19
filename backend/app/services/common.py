@@ -1,6 +1,7 @@
 import json
 import math
 from datetime import UTC, datetime
+from typing import overload
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AuditLog, Compartment, LockerStation, Order
 from app.schemas import OrderView
 from app.security import derive_numeric_code
+
+
+@overload
+def as_utc(value: datetime) -> datetime: ...
+
+
+@overload
+def as_utc(value: None) -> None: ...
 
 
 def as_utc(value: datetime | None) -> datetime | None:
