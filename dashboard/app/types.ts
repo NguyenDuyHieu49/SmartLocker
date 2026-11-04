@@ -5,6 +5,7 @@ export interface User {
   phone: string
   name: string
   role: Role
+  email?: string | null
 }
 
 export interface AuthResponse {
@@ -19,6 +20,7 @@ export interface Order {
   status: string
   recipient_phone: string
   recipient_name: string
+  recipient_email?: string | null
   box: number
   station_device_id: string
   stored_at: string | null

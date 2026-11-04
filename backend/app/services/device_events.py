@@ -34,6 +34,12 @@ from app.security import (
 )
 from app.services.commands import mark_command_ack, publish_unlock
 from app.services.common import add_audit, calculate_fee, find_station_and_box
+from app.services.notifications import (
+    Message,
+    NotificationDispatcher,
+    Recipient,
+    pickup_ready_message,
+)
 from app.services.payment_service import (
     cancel_expired_pending_payments,
     cancel_order_payment,
@@ -55,10 +61,12 @@ class DeviceEventProcessor:
         mqtt: MqttService,
         payment_gateway: PaymentGateway,
         loop: asyncio.AbstractEventLoop,
+        notifier: NotificationDispatcher | None = None,
     ) -> None:
         self.mqtt = mqtt
         self.payment_gateway = payment_gateway
         self.loop = loop
+        self.notifier = notifier or NotificationDispatcher()
 
     def submit(self, device_id: str, event_name: str, payload: dict[str, Any]) -> None:
         future = asyncio.run_coroutine_threadsafe(
@@ -662,11 +670,15 @@ class DeviceEventProcessor:
                 order.stored_at = datetime.now(UTC)
                 compartment.status = CompartmentStatus.OCCUPIED.value
                 action_name = "PACKAGE_STORED"
+                pickup_notice = await self._pickup_ready_notice(
+                    session, order, compartment
+                )
             else:
                 order.status = OrderStatus.COMPLETED.value
                 order.completed_at = datetime.now(UTC)
                 compartment.status = CompartmentStatus.AVAILABLE.value
                 action_name = "PACKAGE_PICKED_UP"
+                pickup_notice = None
             if command is not None:
                 command.status = CommandStatus.COMPLETED.value
             await add_audit(
@@ -681,6 +693,36 @@ class DeviceEventProcessor:
                 f"[{action_name}] Device {device_id} - Ngăn #{box + 1} hoàn tất. Đã lưu trạng thái DB.",
                 flush=True,
             )
+            if pickup_notice is not None:
+                # Only notify once the stored state is committed, so the OTP in the
+                # message is guaranteed to work at the locker.
+                self.notifier.notify_in_background(*pickup_notice)
+
+    async def _pickup_ready_notice(
+        self, session: AsyncSession, order: Order, compartment: Compartment
+    ) -> tuple[Recipient, Message] | None:
+        email = order.recipient_email
+        if email is None:
+            # Kiosk deposits only collect a phone number; fall back to the email
+            # the recipient saved on their account.
+            email = await session.scalar(
+                select(User.email).where(User.phone == order.recipient_phone)
+            )
+        recipient = Recipient(
+            name=order.recipient_name, phone=order.recipient_phone, email=email
+        )
+        if not any(n.address_for(recipient) for n in self.notifier.notifiers):
+            return None
+        station = await session.get(LockerStation, compartment.station_id)
+        message = pickup_ready_message(
+            recipient_name=order.recipient_name,
+            order_code=order.order_code,
+            pickup_otp=derive_numeric_code(order.order_code, "pickup", length=8),
+            box_number=compartment.number,
+            station_name=station.name if station else "SmartBox",
+            station_address=station.address if station else "",
+        )
+        return recipient, message
 
     async def _tech_clear_box(
         self, session: AsyncSession, device_id: str, box: int

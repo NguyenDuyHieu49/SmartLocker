@@ -23,6 +23,11 @@ export function useApi() {
     }
   }
 
+  function setUser(next: User) {
+    user.value = next
+    if (import.meta.client) localStorage.setItem('smartbox_user', JSON.stringify(next))
+  }
+
   function logout() {
     token.value = ''
     user.value = null
@@ -43,5 +48,5 @@ export function useApi() {
     })
   }
 
-  return { api, hydrate, logout, setAuth, token, user }
+  return { api, hydrate, logout, setAuth, setUser, token, user }
 }

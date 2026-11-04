@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
@@ -8,6 +8,7 @@ class RegisterRequest(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     password: str = Field(min_length=8, max_length=128)
     role: str = "CUSTOMER"
+    email: EmailStr | None = None
 
 
 class LoginRequest(BaseModel):
@@ -15,11 +16,16 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class UpdateProfileRequest(BaseModel):
+    email: EmailStr | None = None
+
+
 class UserView(BaseModel):
     id: str
     phone: str
     name: str
     role: str
+    email: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -33,6 +39,7 @@ class AuthResponse(BaseModel):
 class CreateOrderRequest(BaseModel):
     recipient_phone: str
     recipient_name: str = Field(min_length=2, max_length=120)
+    recipient_email: EmailStr | None = None
     station_device_id: str = "SB-001"
 
 
@@ -42,6 +49,7 @@ class OrderView(BaseModel):
     status: str
     recipient_phone: str
     recipient_name: str
+    recipient_email: str | None = None
     box: int
     station_device_id: str
     stored_at: datetime | None

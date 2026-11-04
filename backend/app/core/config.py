@@ -50,6 +50,21 @@ class Settings(BaseSettings):
     momo_secret_key: str | None = None
     momo_timeout_seconds: float = 30.0
 
+    # Gmail: enable 2-Step Verification and use an App Password, not the account
+    # password. Email notifications stay off until username and password are set.
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_sender: str | None = None
+    smtp_use_ssl: bool = False
+    smtp_timeout_seconds: float = 10.0
+    # Brevo sends over HTTPS and takes precedence over SMTP when configured. The
+    # sender address must be verified in the Brevo account.
+    brevo_api_key: str | None = None
+    brevo_sender_email: str | None = None
+    brevo_sender_name: str = "SmartBox"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

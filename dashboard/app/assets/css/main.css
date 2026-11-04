@@ -28,3 +28,4 @@
 
 @media(max-width:900px){.auth-layout{grid-template-columns:1fr;min-height:auto}.hero-copy{min-height:62vh;padding:38px 24px}.hero-copy .image-track figure{width:100vw}.auth-card{margin:40px 24px 56px;width:calc(100% - 48px);max-width:none}}
 @media(max-width:620px){.hero-copy{min-height:56vh;padding:30px 18px}.hero-copy h1{font-size:44px}.hero-copy .process-line{display:none}.hero-copy .image-track figcaption{top:14px;left:14px}.auth-card{margin:28px 18px 42px;width:calc(100% - 36px)}}
+.email-panel{margin-bottom:22px}.email-panel h2{margin-bottom:10px}.email-panel .muted{margin:0 0 18px}

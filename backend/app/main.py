@@ -23,6 +23,7 @@ from app.mqtt.registry import DeviceRegistry
 from app.mqtt.service import MqttService
 from app.payments import PayOSGateway, create_payment_gateway
 from app.services.device_events import DeviceEventProcessor
+from app.services.notifications import build_dispatcher
 from app.services.payment_service import (
     cancel_expired_pending_payments,
     mark_overdue_orders,
@@ -62,7 +63,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # Webhook registration depends on an external service and must not make
             # the locker API unavailable during a transient payOS/DNS failure.
             logger.exception("payOS webhook confirmation failed")
-    processor = DeviceEventProcessor(mqtt, payment_gateway, asyncio.get_running_loop())
+    processor = DeviceEventProcessor(
+        mqtt,
+        payment_gateway,
+        asyncio.get_running_loop(),
+        notifier=build_dispatcher(settings),
+    )
 
     def on_device_event(device_id: str, event_name: str, payload: dict[str, Any]) -> None:
         print(f"[MQTT EVENT] device='{device_id}' event='{event_name}' payload={payload}", flush=True)

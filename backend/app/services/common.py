@@ -58,6 +58,7 @@ async def order_view(
         status=order.status,
         recipient_phone=order.recipient_phone,
         recipient_name=order.recipient_name,
+        recipient_email=order.recipient_email,
         box=compartment.number,
         station_device_id=station.device_id,
         stored_at=as_utc(order.stored_at),

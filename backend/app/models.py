@@ -80,6 +80,7 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid_string)
     phone: Mapped[str] = mapped_column(String(20), unique=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(254), nullable=True)
     name: Mapped[str] = mapped_column(String(120))
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(20), index=True)
@@ -132,6 +133,7 @@ class Order(Base):
     )
     recipient_phone: Mapped[str] = mapped_column(String(20), index=True)
     recipient_name: Mapped[str] = mapped_column(String(120))
+    recipient_email: Mapped[str | None] = mapped_column(String(254), nullable=True)
     compartment_id: Mapped[str] = mapped_column(
         ForeignKey("compartments.id"), index=True
     )

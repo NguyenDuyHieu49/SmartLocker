@@ -3,7 +3,13 @@ from sqlalchemy import select
 
 from app.dependencies import CurrentUser, SessionDep
 from app.models import User, UserRole
-from app.schemas import AuthResponse, LoginRequest, RegisterRequest, UserView
+from app.schemas import (
+    AuthResponse,
+    LoginRequest,
+    RegisterRequest,
+    UpdateProfileRequest,
+    UserView,
+)
 from app.security import (
     create_access_token,
     hash_password,
@@ -30,6 +36,7 @@ async def register(body: RegisterRequest, session: SessionDep) -> AuthResponse:
         name=body.name.strip(),
         password_hash=hash_password(body.password),
         role=role,
+        email=body.email,
     )
     session.add(user)
     await session.commit()
@@ -59,4 +66,14 @@ async def login(body: LoginRequest, session: SessionDep) -> AuthResponse:
 
 @router.get("/me", response_model=UserView)
 async def me(user: CurrentUser) -> UserView:
+    return UserView.model_validate(user)
+
+
+@router.patch("/me", response_model=UserView)
+async def update_me(
+    body: UpdateProfileRequest, session: SessionDep, user: CurrentUser
+) -> UserView:
+    user.email = body.email
+    await session.commit()
+    await session.refresh(user)
     return UserView.model_validate(user)

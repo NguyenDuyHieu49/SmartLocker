@@ -54,3 +54,12 @@ services:
         value: "false"
       - key: MQTT_CLIENT_ID
         value: smartlocker-backend
+      # Email OTP notifications: set Brevo (works on the free plan) or Gmail SMTP.
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false

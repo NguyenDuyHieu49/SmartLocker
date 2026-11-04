@@ -134,6 +134,7 @@ async def create_order(
         shipper_id=user.id,
         recipient_phone=recipient_phone,
         recipient_name=body.recipient_name.strip(),
+        recipient_email=body.recipient_email,
         compartment_id=compartment.id,
         status=OrderStatus.RESERVED.value,
         deposit_code_digest=code_digest(deposit_code),

@@ -46,6 +46,14 @@ async def initialize_database(settings: Settings) -> None:
                 )
             )
 
+        # Contact emails used for OTP notifications (Alembic d4e8b1f2a6c9).
+        for table_name, col_name in (("users", "email"), ("orders", "recipient_email")):
+            table_cols = await connection.run_sync(_get_table_column_names, table_name)
+            if col_name not in table_cols:
+                await connection.execute(
+                    text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} VARCHAR(254)")
+                )
+
 
     async with SessionFactory() as session:
         station = await session.scalar(
