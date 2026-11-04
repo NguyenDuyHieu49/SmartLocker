@@ -18,5 +18,12 @@ export default defineNuxtConfig({
           : 'http://localhost:8000'),
     },
   },
+  typescript: {
+    nodeTsConfig: {
+      compilerOptions: {
+        types: ['node'],
+      },
+    },
+  },
   nitro: { preset: 'static' },
 })
